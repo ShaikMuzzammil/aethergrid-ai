@@ -8,9 +8,8 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "lh3.googleusercontent.com" },
     ],
   },
-  experimental: {
-    serverComponentsExternalPackages: ["@prisma/client", "bcryptjs"],
-  },
+  // Next.js 15: serverExternalPackages (replaces experimental.serverComponentsExternalPackages)
+  serverExternalPackages: ["@prisma/client", "bcryptjs"],
   webpack: (config) => {
     config.externals.push("@node-rs/argon2", "@node-rs/bcrypt");
     return config;

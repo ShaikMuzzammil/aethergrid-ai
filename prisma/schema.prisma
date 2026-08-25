@@ -3,32 +3,163 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  USER
+  ADMIN
+  SUPERADMIN
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum DeviceType {
+  ESP32
+  ESP8266
+  RASPBERRY_PI
+  NVIDIA_JETSON
+  STM32
+  RISCV
+  ARDUINO
+  CUSTOM
+}
+
+enum DeviceStatus {
+  ONLINE
+  OFFLINE
+  WARNING
+  ERROR
+  MAINTENANCE
+}
+
+enum CommandStatus {
+  PENDING
+  SENT
+  EXECUTED
+  FAILED
+  TIMEOUT
+}
+
+enum AlertType {
+  CONNECTIVITY
+  PERFORMANCE
+  SECURITY
+  HARDWARE
+  FIRMWARE
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ModelType {
+  OBJECT_DETECTION
+  IMAGE_SEGMENTATION
+  CLASSIFICATION
+  ANOMALY_DETECTION
+  NLP
+  TIME_SERIES
+  RECOMMENDATION
+  GENERATIVE
+}
+
+enum MLFramework {
+  TENSORFLOW
+  PYTORCH
+  ONNX
+  TFLITE
+  OPENVINO
+  CUSTOM
+}
+
+enum ModelStatus {
+  DRAFT
+  TRAINING
+  TRAINED
+  DEPLOYED
+  ARCHIVED
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum DeploymentType {
+  API_SERVICE
+  MODEL_SERVING
+  WEB_APP
+  BACKGROUND_WORKER
+  DATA_PIPELINE
+  EDGE_FUNCTION
+}
+
+enum DeploymentStatus {
+  PENDING
+  DEPLOYING
+  RUNNING
+  STOPPED
+  FAILED
+  UPDATING
+}
+
+enum ExportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum NotificationType {
+  SYSTEM
+  DEVICE_ALERT
+  MODEL_COMPLETE
+  DEPLOYMENT
+  SECURITY
+  TEAM
+}
+
+// ─── Auth Models ─────────────────────────────────────────────────────────────
+
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String    @unique
-  emailVerified DateTime?
-  image         String?
-  password      String?
-  role          UserRole  @default(USER)
-  twoFactorEnabled Boolean @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  accounts      Account[]
-  sessions      Session[]
-  devices       Device[]
-  aiModels      AiModel[]
-  deployments   Deployment[]
-  apiKeys       ApiKey[]
-  webhooks      Webhook[]
-  exportJobs    ExportJob[]
-  notifications Notification[]
-  auditLogs     AuditLog[]
-  teamMembers   TeamMember[]
+  id               String         @id @default(cuid())
+  name             String?
+  email            String         @unique
+  emailVerified    DateTime?
+  image            String?
+  password         String?
+  role             UserRole       @default(USER)
+  twoFactorEnabled Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  accounts          Account[]
+  sessions          Session[]
+  devices           Device[]
+  aiModels          AiModel[]
+  deployments       Deployment[]
+  apiKeys           ApiKey[]
+  webhooks          Webhook[]
+  exportJobs        ExportJob[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  teamMembers       TeamMember[]
 }
 
 model Account {
@@ -44,7 +175,9 @@ model Account {
   scope             String?
   id_token          String? @db.Text
   session_state     String?
-  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([provider, providerAccountId])
 }
 
@@ -53,21 +186,25 @@ model Session {
   sessionToken String   @unique
   userId       String
   expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model VerificationToken {
   identifier String
   token      String   @unique
   expires    DateTime
+
   @@unique([identifier, token])
 }
 
+// ─── Device Models ───────────────────────────────────────────────────────────
+
 model Device {
-  id              String        @id @default(cuid())
+  id              String       @id @default(cuid())
   name            String
   type            DeviceType
-  status          DeviceStatus  @default(OFFLINE)
+  status          DeviceStatus @default(OFFLINE)
   firmwareVersion String?
   ipAddress       String?
   macAddress      String?
@@ -77,25 +214,27 @@ model Device {
   tags            String[]
   metadata        Json?
   lastSeen        DateTime?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
   userId          String
   groupId         String?
-  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  group           DeviceGroup?  @relation(fields: [groupId], references: [id])
-  sensorReadings  SensorReading[]
-  commands        DeviceCommand[]
-  alerts          DeviceAlert[]
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group          DeviceGroup?   @relation(fields: [groupId], references: [id])
+  sensorReadings SensorReading[]
+  commands       DeviceCommand[]
+  alerts         DeviceAlert[]
 }
 
 model DeviceGroup {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
   description String?
   color       String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  devices     Device[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  devices Device[]
 }
 
 model SensorReading {
@@ -106,7 +245,9 @@ model SensorReading {
   unit      String?
   quality   Int?     @default(100)
   timestamp DateTime @default(now())
-  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
   @@index([deviceId, metric, timestamp])
 }
 
@@ -119,7 +260,8 @@ model DeviceCommand {
   response   Json?
   sentAt     DateTime      @default(now())
   executedAt DateTime?
-  device     Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 }
 
 model DeviceAlert {
@@ -131,28 +273,32 @@ model DeviceAlert {
   resolved   Boolean       @default(false)
   createdAt  DateTime      @default(now())
   resolvedAt DateTime?
-  device     Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 }
 
+// ─── AI / ML Models ──────────────────────────────────────────────────────────
+
 model AiModel {
-  id          String        @id @default(cuid())
+  id          String      @id @default(cuid())
   name        String
-  version     String        @default("1.0.0")
+  version     String      @default("1.0.0")
   type        ModelType
   framework   MLFramework
   description String?
   accuracy    Float?
   size        Int?
   latency     Float?
-  status      ModelStatus   @default(DRAFT)
+  status      ModelStatus @default(DRAFT)
   tags        String[]
   metadata    Json?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
   userId      String
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  trainingJobs    TrainingJob[]
-  deployments     Deployment[]
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trainingJobs      TrainingJob[]
+  deployments       Deployment[]
   inferenceRequests InferenceRequest[]
 }
 
@@ -171,7 +317,8 @@ model TrainingJob {
   startedAt    DateTime?
   completedAt  DateTime?
   createdAt    DateTime  @default(now())
-  model        AiModel   @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  model AiModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
 }
 
 model InferenceRequest {
@@ -182,8 +329,11 @@ model InferenceRequest {
   latency   Float?
   status    String   @default("pending")
   createdAt DateTime @default(now())
-  model     AiModel  @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  model AiModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
 }
+
+// ─── Deployment Models ───────────────────────────────────────────────────────
 
 model Deployment {
   id          String           @id @default(cuid())
@@ -199,10 +349,11 @@ model Deployment {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   userId      String
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  model       AiModel?         @relation(fields: [modelId], references: [id])
-  logs        DeploymentLog[]
-  metrics     DeploymentMetric[]
+
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  model   AiModel?          @relation(fields: [modelId], references: [id])
+  logs    DeploymentLog[]
+  metrics DeploymentMetric[]
 }
 
 model DeploymentLog {
@@ -211,7 +362,8 @@ model DeploymentLog {
   level        String     @default("info")
   message      String
   timestamp    DateTime   @default(now())
-  deployment   Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+
+  deployment Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
 }
 
 model DeploymentMetric {
@@ -220,8 +372,11 @@ model DeploymentMetric {
   metric       String
   value        Float
   timestamp    DateTime   @default(now())
-  deployment   Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+
+  deployment Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
 }
+
+// ─── API Keys & Webhooks ─────────────────────────────────────────────────────
 
 model ApiKey {
   id          String    @id @default(cuid())
@@ -233,19 +388,21 @@ model ApiKey {
   expiresAt   DateTime?
   revokedAt   DateTime?
   createdAt   DateTime  @default(now())
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Webhook {
-  id         String            @id @default(cuid())
-  name       String
-  url        String
-  events     String[]
-  secret     String?
-  active     Boolean           @default(true)
-  userId     String
-  createdAt  DateTime          @default(now())
-  updatedAt  DateTime          @updatedAt
+  id        String   @id @default(cuid())
+  name      String
+  url       String
+  events    String[]
+  secret    String?
+  active    Boolean  @default(true)
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   deliveries WebhookDelivery[]
 }
@@ -259,8 +416,11 @@ model WebhookDelivery {
   response  String?
   duration  Float?
   createdAt DateTime @default(now())
-  webhook   Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
 }
+
+// ─── Export Jobs ─────────────────────────────────────────────────────────────
 
 model ExportJob {
   id          String       @id @default(cuid())
@@ -274,8 +434,11 @@ model ExportJob {
   userId      String
   createdAt   DateTime     @default(now())
   completedAt DateTime?
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+// ─── Notifications & Audit ───────────────────────────────────────────────────
 
 model Notification {
   id        String           @id @default(cuid())
@@ -286,7 +449,8 @@ model Notification {
   read      Boolean          @default(false)
   metadata  Json?
   createdAt DateTime         @default(now())
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model AuditLog {
@@ -299,18 +463,22 @@ model AuditLog {
   ipAddress  String?
   userAgent  String?
   createdAt  DateTime @default(now())
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+// ─── Team Models ─────────────────────────────────────────────────────────────
+
 model Team {
-  id          String       @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
-  slug        String       @unique
+  slug        String   @unique
   description String?
-  plan        String       @default("free")
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  members     TeamMember[]
+  plan        String   @default("free")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members TeamMember[]
 }
 
 model TeamMember {
@@ -319,23 +487,9 @@ model TeamMember {
   userId   String
   role     TeamRole @default(MEMBER)
   joinedAt DateTime @default(now())
-  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([teamId, userId])
 }
-
-enum UserRole { USER ADMIN SUPERADMIN }
-enum TeamRole { OWNER ADMIN MEMBER VIEWER }
-enum DeviceType { ESP32 ESP8266 RASPBERRY_PI NVIDIA_JETSON STM32 RISCV ARDUINO CUSTOM }
-enum DeviceStatus { ONLINE OFFLINE WARNING ERROR MAINTENANCE }
-enum CommandStatus { PENDING SENT EXECUTED FAILED TIMEOUT }
-enum AlertType { CONNECTIVITY PERFORMANCE SECURITY HARDWARE FIRMWARE }
-enum AlertSeverity { LOW MEDIUM HIGH CRITICAL }
-enum ModelType { OBJECT_DETECTION IMAGE_SEGMENTATION CLASSIFICATION ANOMALY_DETECTION NLP TIME_SERIES RECOMMENDATION GENERATIVE }
-enum MLFramework { TENSORFLOW PYTORCH ONNX TFLITE OPENVINO CUSTOM }
-enum ModelStatus { DRAFT TRAINING TRAINED DEPLOYED ARCHIVED }
-enum JobStatus { QUEUED RUNNING COMPLETED FAILED CANCELLED }
-enum DeploymentType { API_SERVICE MODEL_SERVING WEB_APP BACKGROUND_WORKER DATA_PIPELINE EDGE_FUNCTION }
-enum DeploymentStatus { PENDING DEPLOYING RUNNING STOPPED FAILED UPDATING }
-enum ExportStatus { PENDING PROCESSING COMPLETED FAILED }
-enum NotificationType { SYSTEM DEVICE_ALERT MODEL_COMPLETE DEPLOYMENT SECURITY TEAM }

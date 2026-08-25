@@ -14,12 +14,13 @@ const updateSchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const model = await prisma.aiModel.findFirst({
-      where: { id: params.id, userId: (session.user as any).id },
+      where: { id, userId: (session.user as any).id },
       include: {
         trainingJobs: { orderBy: { createdAt: "desc" }, take: 5 },
         deployments: { select: { id: true, name: true, status: true } },
@@ -31,16 +32,14 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   } catch { return NextResponse.json({ error: "Failed to fetch model" }, { status: 500 }); }
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const body = await req.json();
     const data = updateSchema.parse(body);
-    const model = await prisma.aiModel.updateMany({
-      where: { id: params.id, userId: (session.user as any).id },
-      data: { ...data, updatedAt: new Date() },
-    });
+    const model = await prisma.aiModel.updateMany({ where: { id, userId: (session.user as any).id }, data: { ...data, updatedAt: new Date() } });
     if (model.count === 0) return NextResponse.json({ error: "Model not found" }, { status: 404 });
     return NextResponse.json({ success: true });
   } catch (e: any) {
@@ -49,11 +48,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const result = await prisma.aiModel.deleteMany({ where: { id: params.id, userId: (session.user as any).id } });
+    const result = await prisma.aiModel.deleteMany({ where: { id, userId: (session.user as any).id } });
     if (result.count === 0) return NextResponse.json({ error: "Model not found" }, { status: 404 });
     return NextResponse.json({ success: true });
   } catch { return NextResponse.json({ error: "Failed to delete model" }, { status: 500 }); }
