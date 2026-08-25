@@ -22,6 +22,45 @@
 13. [Troubleshooting](#13-troubleshooting)
 14. [Platform Features](#14-platform-features)
 
+
+## ⚠️ IMPORTANT: Updating an Existing GitHub Repo
+
+If you previously pushed the old code to GitHub and are now replacing it with this fixed version, you **must delete the old `(auth)` route group folder** from your repo. Otherwise Vercel will see duplicate login/register pages and fail to build.
+
+### Option A — Fresh repo (recommended)
+
+```bash
+# Delete the old local folder and re-extract the new ZIP
+rm -rf aethergrid-ai/
+unzip aethergrid-ai-FIXED.zip
+mv aethergrid-fixed aethergrid-ai
+cd aethergrid-ai
+
+git init
+git add .
+git commit -m "fix: complete platform rewrite — all build errors resolved"
+git remote add origin https://github.com/YOUR_USERNAME/aethergrid-ai.git
+git branch -M main
+git push -u origin main --force
+```
+
+### Option B — Update existing repo
+
+```bash
+cd aethergrid-ai   # your existing repo
+
+# Remove the old (auth) duplicate folder that caused the conflict
+git rm -r --cached "src/app/(auth)" 2>/dev/null || true
+rm -rf "src/app/(auth)"
+
+# Copy in the new files from the fixed ZIP (overwrite everything)
+# ... copy files ...
+
+git add .
+git commit -m "fix: remove (auth) duplicate, add autoprefixer, patch Next.js CVE"
+git push
+```
+
 ---
 
 ## 1. What Is AetherGrid AI?
