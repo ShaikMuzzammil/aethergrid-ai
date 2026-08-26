@@ -1,57 +1,64 @@
 #!/bin/bash
-# ================================================================
-# AetherGrid AI — GitHub Force Push Script
-# Run this ONCE from inside the aethergrid-ai folder after
-# extracting the ZIP. It replaces the old repo completely.
-# ================================================================
+# ============================================================
+# AetherGrid AI — One-Shot GitHub Deploy Script
+# 
+# USAGE:
+#   cd aethergrid-fixed
+#   bash push.sh https://github.com/ShaikMuzzammil/aethergrid-ai.git
+# ============================================================
 
-echo "🚀 AetherGrid AI — GitHub Force Push"
-echo "======================================"
-
-# Ask for the GitHub repo URL
-if [ -z "$1" ]; then
-  echo ""
-  echo "Usage:  bash push.sh https://github.com/YOUR_USERNAME/aethergrid-ai.git"
-  echo "   or:  bash push.sh  (prompts for URL)"
-  echo ""
-  read -p "Enter your GitHub repo URL: " REPO_URL
-else
-  REPO_URL="$1"
-fi
-
+REPO_URL="${1}"
 if [ -z "$REPO_URL" ]; then
-  echo "❌ No URL provided. Exiting."
-  exit 1
+  read -p "GitHub repo URL (e.g. https://github.com/USER/REPO.git): " REPO_URL
 fi
+[ -z "$REPO_URL" ] && echo "❌ No URL provided." && exit 1
 
 echo ""
-echo "📦 Initialising fresh git history..."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  AetherGrid AI — Force Deploy"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Wipe any old git state and start fresh
+# Wipe any old .git completely
+echo "① Wiping old git history..."
 rm -rf .git
+
+# Safety: remove (auth) if it somehow exists
+echo "② Removing any (auth) route group..."
+rm -rf "src/app/(auth)"
+
+# Fresh git
+echo "③ Fresh git init..."
 git init
 git branch -M main
 
-echo "📄 Staging all files (including deletions of old paths)..."
+# Stage everything (new files + any deletions)
+echo "④ Staging all files..."
 git add -A
 
-echo "💾 Creating commit..."
-git commit -m "feat: AetherGrid AI v2 — all build errors fixed
+git status --short | head -20
+echo "   (showing first 20 changed files)"
 
-Fixes:
-- Prisma schema: 15 single-line enums → multi-line format
-- auth pages: consolidated into (auth) group only (no duplicates)
-- autoprefixer: added to devDependencies
-- Next.js: upgraded to 15.5.24 (all CVEs patched)
-- async params: all [id] routes updated for Next.js 15
-- next.config.ts: serverExternalPackages (Next.js 15 API)"
+echo "⑤ Committing..."
+git commit -m "fix: AetherGrid AI v4 — clean build, no route conflicts
 
-echo "🌐 Connecting to GitHub..."
-git remote add origin "$REPO_URL"
+Changes:
+- Auth pages: ONLY at /login and /register (no (auth) group)
+- No duplicate route pages
+- Next.js 15.5.24 (all CVEs patched)
+- autoprefixer in devDependencies
+- Prisma: all 15 enums in multi-line format
+- All [id] routes use async params (Next.js 15)
+- next.config.ts uses serverExternalPackages (Next.js 15 API)"
 
-echo "⬆️  Force-pushing (replaces all old files on GitHub)..."
+echo "⑥ Setting remote to: $REPO_URL"
+git remote add origin "$REPO_URL" 2>/dev/null || \
+  git remote set-url origin "$REPO_URL"
+
+echo "⑦ Force pushing to GitHub..."
 git push origin main --force
 
 echo ""
-echo "✅ Done! Vercel will auto-deploy in ~30 seconds."
-echo "   Check: https://vercel.com/dashboard"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  ✅ Done! Vercel auto-deploys now."
+echo "  Watch: https://vercel.com/dashboard"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

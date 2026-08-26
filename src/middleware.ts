@@ -6,6 +6,7 @@ export default withAuth(
     const token = req.nextauth.token;
     const { pathname } = req.nextUrl;
 
+    // Redirect non-admins away from /admin routes
     if (
       pathname.startsWith("/admin") &&
       token?.role !== "ADMIN" &&
@@ -20,19 +21,21 @@ export default withAuth(
     callbacks: {
       authorized: ({ token, req }) => {
         const { pathname } = req.nextUrl;
+
+        // Public paths — no auth required
         const publicPaths = [
           "/",
           "/login",
           "/register",
+          "/docs",
           "/api/auth",
-          "/api/auth/register",
         ];
-        if (
-          publicPaths.some(
-            (p) => pathname === p || pathname.startsWith(p + "/")
-          )
-        )
-          return true;
+
+        const isPublic = publicPaths.some(
+          (p) => pathname === p || pathname.startsWith(p + "/")
+        );
+
+        if (isPublic) return true;
         return !!token;
       },
     },
@@ -41,6 +44,6 @@ export default withAuth(
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
