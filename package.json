@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "node -e \"try{require('fs').rmSync('src/app/(auth)',{recursive:true,force:true})}catch(e){}\" && prisma generate && next build",
+    "build": "node -e \"try{require(\"fs\").rmSync(\"src/app/(auth)\",{recursive:true,force:true})}catch(e){}\" && prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "db:push": "prisma db push",
@@ -14,7 +14,7 @@
     "db:migrate": "prisma migrate deploy",
     "type-check": "tsc --noEmit",
     "postinstall": "prisma generate",
-    "prebuild": "node -e \"try{require('fs').rmSync('src/app/(auth)',{recursive:true,force:true})}catch(e){};console.log('[prebuild] auth cleanup done')\""
+    "prebuild": "node -e \"try{require(\"fs\").rmSync(\"src/app/(auth)\",{recursive:true,force:true})}catch(e){};console.log(\"[prebuild] auth cleanup done\")\""
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",

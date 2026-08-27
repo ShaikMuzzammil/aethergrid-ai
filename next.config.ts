@@ -1,22 +1,18 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Silence build-blocking TS/ESLint errors so the platform can still ship
-  typescript: {
-    ignoreBuildErrors: false,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  reactStrictMode: true,
+  serverExternalPackages: ["@prisma/client", "prisma"],
   images: {
     remotePatterns: [
-      { protocol: "https", hostname: "images.unsplash.com" },
       { protocol: "https", hostname: "avatars.githubusercontent.com" },
       { protocol: "https", hostname: "lh3.googleusercontent.com" },
+      { protocol: "https", hostname: "*.vercel.app" },
     ],
   },
-  // Next.js 15: serverExternalPackages replaces experimental.serverComponentsExternalPackages
-  serverExternalPackages: ["@prisma/client", "bcryptjs"],
+  experimental: {
+    optimizePackageImports: ["lucide-react", "framer-motion", "recharts"],
+  },
 };
 
 export default nextConfig;

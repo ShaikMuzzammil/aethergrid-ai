@@ -1,42 +1,49 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Toaster } from "sonner";
 
-const inter = Inter({
+const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
-  variable: "--font-inter",
+  variable: "--font-display",
+  weight: ["300", "400", "500", "600", "700"],
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  weight: ["400", "500", "700"],
 });
 
 export const metadata: Metadata = {
-  title: {
-    default: "AetherGrid AI — World-Scale Edge AI Platform",
-    template: "%s | AetherGrid AI",
-  },
-  description: "Enterprise-ready platform bridging distributed hardware edge nodes, localized AI runtimes, and multi-tenant cloud-native control console.",
-  keywords: ["IoT", "Edge AI", "Machine Learning", "ESP32", "Raspberry Pi", "NVIDIA Jetson", "Edge Computing"],
-  authors: [{ name: "AetherGrid AI Team" }],
+  title: { default: "AetherGrid AI — Edge AI Platform", template: "%s | AetherGrid AI" },
+  description: "Deploy, monitor, and scale AI models from $3 ESP32 microcontrollers to NVIDIA GPU clusters. The world's most capable edge AI platform.",
+  keywords: ["edge AI", "IoT", "ESP32", "Jetson", "ML deployment", "edge computing", "IoT platform"],
+  authors: [{ name: "Shaik Muzzammil", url: "https://linktr.ee/Shaik_Muzzammil" }],
   openGraph: {
-    title: "AetherGrid AI — World-Scale Edge AI Platform",
-    description: "From $3 ESP32 chips to GPU clusters — deploy AI anywhere, at any scale.",
+    title: "AetherGrid AI — Edge AI Platform",
+    description: "Deploy AI to any device. Manage billions of IoT devices with real-time analytics, automated workflows, and enterprise security.",
     type: "website",
-    url: "https://aethergrid.ai",
   },
-  twitter: {
-    card: "summary_large_image",
-    title: "AetherGrid AI",
-    description: "World-Scale Autonomous Edge AI & Hardware OS Ecosystem",
-  },
+  twitter: { card: "summary_large_image" },
+  robots: { index: true, follow: true },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} font-sans antialiased`}>
+    <html lang="en" className={`${spaceGrotesk.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
+      <body className="font-sans antialiased" suppressHydrationWarning>
         <Providers>
           {children}
-          <Toaster richColors position="top-right" />
+          <Toaster
+            position="top-right"
+            theme="dark"
+            toastOptions={{
+              style: { background: "#0a0e1a", border: "1px solid rgba(0,212,255,0.2)", color: "#e2e8f0" },
+              classNames: { success: "!border-green-500/30", error: "!border-red-500/30", info: "!border-cyan-500/30" },
+            }}
+          />
         </Providers>
       </body>
     </html>

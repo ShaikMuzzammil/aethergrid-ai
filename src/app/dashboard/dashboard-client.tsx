@@ -1,419 +1,309 @@
 "use client";
-import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
-import {
-  LineChart, Line, AreaChart, Area, BarChart, Bar,
-  PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend
-} from "recharts";
-import {
-  Cpu, Brain, Activity, Shield, AlertTriangle, CheckCircle,
-  Clock, Zap, TrendingUp, TrendingDown, RefreshCw, Filter,
-  ArrowUpRight, ArrowDownRight, Server, Wifi, Database, Radio,
-  ChevronRight, MoreHorizontal
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { cn, formatTimeAgo } from "@/lib/utils";
+import {
+  Cpu, Brain, Activity, Shield, TrendingUp, AlertTriangle,
+  Wifi, WifiOff, Clock, ChevronRight, Zap, RefreshCw,
+  BarChart3, Server, Radio, Database
+} from "lucide-react";
 
-// Simulated real-time data generators
-function generateTelemetry(points = 24) {
-  return Array.from({ length: points }, (_, i) => ({
-    time: `${i}:00`,
-    devices: Math.floor(2600 + Math.random() * 500),
-    throughput: Math.floor(800 + Math.random() * 600),
-    latency: Math.floor(45 + Math.random() * 30),
-    errors: Math.floor(Math.random() * 20),
-  }));
+// ── Live Sparkline Canvas ─────────────────────────────────────────────────────
+function Sparkline({ data, color = "#00d4ff" }: { data: number[]; color?: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d")!;
+    const w = canvas.width; const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    const max = Math.max(...data); const min = Math.min(...data);
+    const range = max - min || 1;
+    const points = data.map((v, i) => ({ x: (i / (data.length - 1)) * w, y: h - ((v - min) / range) * h * 0.85 - h * 0.05 }));
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, color + "40"); grad.addColorStop(1, color + "00");
+    ctx.beginPath(); ctx.moveTo(points[0].x, h);
+    points.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.lineTo(points[points.length - 1].x, h); ctx.closePath();
+    ctx.fillStyle = grad; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y);
+    points.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke();
+  }, [data, color]);
+  return <canvas ref={canvasRef} width={120} height={36} className="w-full h-9" />;
 }
 
-function generateDeviceStatus() {
-  return [
-    { name: "Online", value: 78, color: "#10B981" },
-    { name: "Warning", value: 12, color: "#F59E0B" },
-    { name: "Offline", value: 8, color: "#6B7280" },
-    { name: "Error", value: 2, color: "#EF4444" },
-  ];
+// ── Radial Gauge ─────────────────────────────────────────────────────────────
+function Gauge({ value, max = 100, color = "#00d4ff", label }: { value: number; max?: number; color?: string; label: string }) {
+  const pct = Math.min(value / max, 1);
+  const r = 36; const cx = 44; const cy = 44;
+  const circ = 2 * Math.PI * r;
+  const dash = circ * 0.75; const gap = circ * 0.25;
+  const offset = dash - pct * dash;
+  return (
+    <div className="flex flex-col items-center">
+      <svg width="88" height="88" className="-rotate-[135deg]">
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="7"
+          strokeDasharray={`${dash} ${gap}`} />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth="7"
+          strokeDasharray={`${dash} ${gap}`} strokeDashoffset={offset}
+          strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s ease" }} />
+      </svg>
+      <div className="text-center -mt-16">
+        <div className="text-xl font-black text-white">{value}<span className="text-xs text-muted-foreground">%</span></div>
+        <div className="text-[10px] text-muted-foreground mt-1">{label}</div>
+      </div>
+    </div>
+  );
 }
 
-const RECENT_ALERTS = [
-  { id: 1, device: "ESP32-Warehouse-07", type: "PERFORMANCE", severity: "HIGH", msg: "CPU usage > 85% for 10+ minutes", time: new Date(Date.now() - 300000) },
-  { id: 2, device: "Jetson-Nano-Edge-12", type: "CONNECTIVITY", severity: "MEDIUM", msg: "Connection dropped, auto-reconnecting", time: new Date(Date.now() - 900000) },
-  { id: 3, device: "RPi4-Gateway-03", type: "FIRMWARE", severity: "LOW", msg: "New firmware v3.2.1 available", time: new Date(Date.now() - 1800000) },
-  { id: 4, device: "STM32-Sensor-22", type: "HARDWARE", severity: "CRITICAL", msg: "Temperature sensor reading out of range", time: new Date(Date.now() - 2700000) },
-  { id: 5, device: "ESP8266-Bay-09", type: "SECURITY", severity: "MEDIUM", msg: "Failed authentication attempt detected", time: new Date(Date.now() - 3600000) },
-];
+// ── Animated ticker ───────────────────────────────────────────────────────────
+function LiveBadge() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => { const id = setInterval(() => setTick(t => t + 1), 2000); return () => clearInterval(id); }, []);
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[10px] font-mono text-green-400 border border-green-400/30 bg-green-400/5 px-2.5 py-1 rounded-full">
+      <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+      LIVE · {tick}s ago
+    </span>
+  );
+}
 
-const RECENT_DEVICES = [
-  { id: "1", name: "ESP32-Warehouse-A1", type: "ESP32", status: "ONLINE", location: "Warehouse A", lastSeen: new Date() },
-  { id: "2", name: "Jetson-Nano-CV-01", type: "NVIDIA_JETSON", status: "ONLINE", location: "Production Line 3", lastSeen: new Date(Date.now() - 60000) },
-  { id: "3", name: "RPi4-Gateway-Main", type: "RASPBERRY_PI", status: "WARNING", location: "Server Room", lastSeen: new Date(Date.now() - 120000) },
-  { id: "4", name: "STM32-TempSensor", type: "STM32", status: "OFFLINE", location: "Cold Storage", lastSeen: new Date(Date.now() - 600000) },
-  { id: "5", name: "Arduino-Actuator-5", type: "ARDUINO", status: "ONLINE", location: "Assembly Line", lastSeen: new Date(Date.now() - 30000) },
-];
+export default function DashboardClient() {
+  const { data: session } = useSession();
+  const [cpuHistory] = useState(() => Array.from({ length: 24 }, () => 30 + Math.random() * 50));
+  const [memHistory] = useState(() => Array.from({ length: 24 }, () => 40 + Math.random() * 40));
+  const [netHistory] = useState(() => Array.from({ length: 24 }, () => 20 + Math.random() * 70));
+  const [refreshed, setRefreshed] = useState(false);
+  const [liveDevices, setLiveDevices] = useState(2847);
+  const [liveInference, setLiveInference] = useState(1240);
 
-const modelPerformance = [
-  { name: "Object Detection v2", accuracy: 94.2, latency: 28, requests: 18420, status: "DEPLOYED" },
-  { name: "Anomaly Detector", accuracy: 91.8, latency: 12, requests: 45200, status: "DEPLOYED" },
-  { name: "NLP Classifier v3", accuracy: 88.5, latency: 45, requests: 8900, status: "DEPLOYED" },
-  { name: "Time Series Forecast", accuracy: 86.3, latency: 65, requests: 3200, status: "TRAINING" },
-];
+  useEffect(() => {
+    const id = setInterval(() => {
+      setLiveDevices(v => v + Math.floor(Math.random() * 5 - 2));
+      setLiveInference(v => Math.max(800, v + Math.floor(Math.random() * 40 - 20)));
+    }, 3000);
+    return () => clearInterval(id);
+  }, []);
 
-const activityFeed = [
-  { icon: "🤖", msg: "Model 'Object Detection v2' deployed to 128 devices", time: new Date(Date.now() - 120000), type: "success" },
-  { icon: "📡", msg: "42 new ESP32 devices registered from Warehouse B", time: new Date(Date.now() - 300000), type: "info" },
-  { icon: "⚠️", msg: "High latency alert triggered on Jetson cluster", time: new Date(Date.now() - 600000), type: "warning" },
-  { icon: "📤", msg: "Data export 'telemetry_jan_2025.csv' completed (2.4 GB)", time: new Date(Date.now() - 900000), type: "success" },
-  { icon: "🔑", msg: "New API key generated by user admin@acme.com", time: new Date(Date.now() - 1200000), type: "info" },
-  { icon: "✅", msg: "Firmware OTA v3.1.4 pushed to 234 ESP32 devices", time: new Date(Date.now() - 1800000), type: "success" },
-];
-
-export function DashboardClient({ user }: { user: any }) {
-  const [telemetry, setTelemetry] = useState(generateTelemetry());
-  const [deviceStatus] = useState(generateDeviceStatus());
-  const [refreshing, setRefreshing] = useState(false);
-  const [range, setRange] = useState("24h");
-
-  const kpis = [
-    {
-      label: "Active Devices", value: "2,847", change: "+12%", up: true,
-      icon: <Cpu className="w-5 h-5" />, color: "cyan",
-      sub: "of 3,200 registered"
-    },
-    {
-      label: "AI Models", value: "34", change: "+3 this week", up: true,
-      icon: <Brain className="w-5 h-5" />, color: "violet",
-      sub: "18 deployed, 16 trained"
-    },
-    {
-      label: "Data Throughput", value: "1.2 TB/hr", change: "+5%", up: true,
-      icon: <Activity className="w-5 h-5" />, color: "green",
-      sub: "48.2 TB this month"
-    },
-    {
-      label: "Active Alerts", value: "12", change: "-3 resolved", up: false,
-      icon: <AlertTriangle className="w-5 h-5" />, color: "yellow",
-      sub: "3 critical, 9 others"
-    },
-    {
-      label: "Uptime", value: "99.99%", change: "30-day avg", up: true,
-      icon: <Shield className="w-5 h-5" />, color: "blue",
-      sub: "< 5min downtime total"
-    },
-    {
-      label: "Inference/sec", value: "18.4K", change: "+8%", up: true,
-      icon: <Zap className="w-5 h-5" />, color: "orange",
-      sub: "across all models"
-    },
+  const stats = [
+    { label: "Active Devices", value: liveDevices.toLocaleString(), change: "+12.3%", icon: <Cpu className="w-5 h-5" />, color: "cyan", history: cpuHistory },
+    { label: "AI Models Live", value: "34", change: "+3 today", icon: <Brain className="w-5 h-5" />, color: "violet", history: memHistory },
+    { label: "Inference/sec", value: liveInference.toLocaleString(), change: "±real-time", icon: <Zap className="w-5 h-5" />, color: "amber", history: netHistory },
+    { label: "Uptime", value: "99.99%", change: "30-day SLA", icon: <Shield className="w-5 h-5" />, color: "emerald", history: cpuHistory.map(v => v * 0.3 + 70) },
   ];
 
-  async function refresh() {
-    setRefreshing(true);
-    await new Promise(r => setTimeout(r, 800));
-    setTelemetry(generateTelemetry());
-    setRefreshing(false);
-  }
+  const colorMap: Record<string, string> = { cyan: "#00d4ff", violet: "#7c3aed", amber: "#f59e0b", emerald: "#10b981" };
+
+  const recentEvents = [
+    { icon: <Wifi className="w-3.5 h-3.5 text-green-400" />, text: "ESP32-Warehouse-A01 came online", time: "2m ago", type: "success" },
+    { icon: <Brain className="w-3.5 h-3.5 text-violet-400" />, text: "YOLOv8 model deployed to 128 devices", time: "14m ago", type: "info" },
+    { icon: <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />, text: "RPi4-Gateway-Main: high CPU (87%)", time: "31m ago", type: "warning" },
+    { icon: <WifiOff className="w-3.5 h-3.5 text-red-400" />, text: "STM32-TempSensor-01 went offline", time: "1h ago", type: "error" },
+    { icon: <Shield className="w-3.5 h-3.5 text-cyan-400" />, text: "Security scan completed — no threats", time: "2h ago", type: "info" },
+    { icon: <Database className="w-3.5 h-3.5 text-emerald-400" />, text: "Daily backup completed (2.4 GB)", time: "3h ago", type: "success" },
+  ];
+
+  const quickLinks = [
+    { label: "Add Device", href: "/devices", icon: <Cpu className="w-4 h-4" />, color: "cyan" },
+    { label: "Deploy Model", href: "/ai-models", icon: <Brain className="w-4 h-4" />, color: "violet" },
+    { label: "Analytics", href: "/analytics", icon: <BarChart3 className="w-4 h-4" />, color: "amber" },
+    { label: "Automations", href: "/automations", icon: <Zap className="w-4 h-4" />, color: "emerald" },
+    { label: "API Keys", href: "/settings/api-keys", icon: <Server className="w-4 h-4" />, color: "sky" },
+    { label: "Integrations", href: "/integrations", icon: <Radio className="w-4 h-4" />, color: "purple" },
+  ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 p-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            Welcome back, {user?.name?.split(" ")[0] || "User"} 👋
+          <h1 className="text-2xl font-black text-white mb-1">
+            {session?.user?.name ? `Hello, ${session.user.name.split(" ")[0]} 👋` : "Dashboard"}
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Your edge AI fleet is running smoothly — here&apos;s what&apos;s happening.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-1 rounded-lg border border-border bg-muted/20 p-1">
-            {["1h", "24h", "7d", "30d"].map(r => (
-              <button key={r} onClick={() => setRange(r)}
-                className={cn("px-3 py-1 rounded-md text-xs font-medium transition-all",
-                  range === r ? "bg-primary/20 text-primary border border-primary/30" : "text-muted-foreground hover:text-foreground")}>
-                {r}
-              </button>
-            ))}
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-muted-foreground">Your edge AI control centre</p>
+            <LiveBadge />
           </div>
-          <button onClick={refresh} disabled={refreshing}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border/60 text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all">
-            <RefreshCw className={cn("w-4 h-4", refreshing && "animate-spin")} />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
         </div>
+        <button onClick={() => setRefreshed(!refreshed)}
+          className="flex items-center gap-2 text-xs text-muted-foreground hover:text-cyan-400 border border-border/50 hover:border-cyan-400/30 px-3.5 py-2 rounded-lg transition-all">
+          <RefreshCw className={`w-3.5 h-3.5 ${refreshed ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
       </div>
 
-      {/* KPI Cards */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
-        className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-        {kpis.map((kpi, i) => (
-          <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05 }}
-            className="metric-card">
-            <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center mb-3",
-              `bg-${kpi.color}-500/15 text-${kpi.color}-400`)}>
-              {kpi.icon}
-            </div>
-            <div className="text-2xl font-black text-foreground leading-none">{kpi.value}</div>
-            <div className="text-xs text-muted-foreground mt-1 leading-tight">{kpi.label}</div>
-            <div className={cn("flex items-center gap-1 text-xs mt-2",
-              kpi.up ? "text-green-400" : "text-yellow-400")}>
-              {kpi.up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {kpi.change}
-            </div>
-          </motion.div>
-        ))}
-      </motion.div>
-
-      {/* Charts Row 1 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main telemetry chart */}
-        <div className="lg:col-span-2 glass rounded-2xl p-6 glow-border">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="font-semibold text-foreground">Device Telemetry</h3>
-              <p className="text-xs text-muted-foreground">Active devices & throughput over time</p>
-            </div>
-            <Filter className="w-4 h-4 text-muted-foreground" />
-          </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={telemetry}>
-              <defs>
-                <linearGradient id="grad1" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#00D4FF" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#00D4FF" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="grad2" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#7C3AED" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#7C3AED" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis dataKey="time" tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ background: "#111827", border: "1px solid #374151", borderRadius: "8px", fontSize: "12px" }} />
-              <Legend />
-              <Area type="monotone" dataKey="devices" name="Active Devices" stroke="#00D4FF" fill="url(#grad1)" strokeWidth={2} />
-              <Area type="monotone" dataKey="throughput" name="Throughput (MB/s)" stroke="#7C3AED" fill="url(#grad2)" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Device Status Pie */}
-        <div className="glass rounded-2xl p-6 glow-border">
-          <div className="mb-4">
-            <h3 className="font-semibold text-foreground">Device Status</h3>
-            <p className="text-xs text-muted-foreground">Fleet health overview</p>
-          </div>
-          <ResponsiveContainer width="100%" height={160}>
-            <PieChart>
-              <Pie data={deviceStatus} cx="50%" cy="50%" innerRadius={50} outerRadius={75}
-                dataKey="value" strokeWidth={0}>
-                {deviceStatus.map((entry, i) => (
-                  <Cell key={i} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip contentStyle={{ background: "#111827", border: "1px solid #374151", borderRadius: "8px", fontSize: "12px" }} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="space-y-2 mt-2">
-            {deviceStatus.map((d, i) => (
-              <div key={i} className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ background: d.color }} />
-                  <span className="text-muted-foreground">{d.name}</span>
-                </div>
-                <span className="text-foreground font-medium">{d.value}%</span>
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {stats.map((s, i) => (
+          <div key={i} className="glass rounded-2xl p-5 glow-border hover:border-cyan-400/30 transition-all">
+            <div className="flex items-start justify-between mb-3">
+              <div className={`w-9 h-9 rounded-xl bg-${s.color}-500/15 flex items-center justify-center text-${s.color}-400`}>
+                {s.icon}
               </div>
-            ))}
+              <span className={`text-[10px] font-mono text-${s.color}-400`}>{s.change}</span>
+            </div>
+            <div className="text-2xl font-black text-white mb-0.5">{s.value}</div>
+            <div className="text-xs text-muted-foreground mb-3">{s.label}</div>
+            <Sparkline data={s.history} color={colorMap[s.color]} />
           </div>
-        </div>
+        ))}
       </div>
 
-      {/* Charts Row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Inference latency bar chart */}
-        <div className="glass rounded-2xl p-6 glow-border">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="font-semibold text-foreground">Inference Latency</h3>
-              <p className="text-xs text-muted-foreground">Average ms per model</p>
-            </div>
+      {/* Middle row */}
+      <div className="grid lg:grid-cols-3 gap-4">
+        {/* Gauges */}
+        <div className="glass rounded-2xl p-5 glow-border">
+          <div className="text-sm font-bold text-white mb-5">System Health</div>
+          <div className="grid grid-cols-3 gap-2">
+            <Gauge value={72} label="CPU" color="#00d4ff" />
+            <Gauge value={58} label="Memory" color="#7c3aed" />
+            <Gauge value={43} label="Network" color="#10b981" />
           </div>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={modelPerformance} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} width={120} />
-              <Tooltip contentStyle={{ background: "#111827", border: "1px solid #374151", borderRadius: "8px", fontSize: "12px" }} />
-              <Bar dataKey="latency" name="Latency (ms)" fill="#00D4FF" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
         </div>
 
-        {/* Error rate line chart */}
-        <div className="glass rounded-2xl p-6 glow-border">
+        {/* Device status */}
+        <div className="glass rounded-2xl p-5 glow-border">
           <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="font-semibold text-foreground">Error Rate</h3>
-              <p className="text-xs text-muted-foreground">Errors per hour across fleet</p>
-            </div>
-          </div>
-          <ResponsiveContainer width="100%" height={180}>
-            <LineChart data={telemetry}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis dataKey="time" tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ background: "#111827", border: "1px solid #374151", borderRadius: "8px", fontSize: "12px" }} />
-              <Line type="monotone" dataKey="errors" name="Errors" stroke="#EF4444" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Bottom Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Devices */}
-        <div className="lg:col-span-1 glass rounded-2xl p-6 glow-border">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-foreground">Recent Devices</h3>
-            <Link href="/devices" className="text-xs text-primary hover:underline flex items-center gap-1">
+            <span className="text-sm font-bold text-white">Device Fleet</span>
+            <Link href="/devices" className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
               View all <ChevronRight className="w-3 h-3" />
             </Link>
           </div>
           <div className="space-y-3">
-            {RECENT_DEVICES.map((device) => (
-              <div key={device.id} className="flex items-center gap-3">
-                <div className={cn("w-2 h-2 rounded-full flex-shrink-0",
-                  device.status === "ONLINE" ? "bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.8)]" :
-                  device.status === "WARNING" ? "bg-yellow-400" : "bg-slate-500"
-                )} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{device.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">{device.location}</p>
+            {[
+              { label: "Online", count: liveDevices - 650, pct: 77, color: "bg-green-400" },
+              { label: "Offline", count: 420, pct: 15, color: "bg-slate-500" },
+              { label: "Warning", count: 134, pct: 5, color: "bg-amber-400" },
+              { label: "Error", count: 96, pct: 3, color: "bg-red-400" },
+            ].map((d, i) => (
+              <div key={i}>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-muted-foreground">{d.label}</span>
+                  <span className="font-mono text-white">{d.count.toLocaleString()} · {d.pct}%</span>
                 </div>
-                <span className="text-xs text-muted-foreground flex-shrink-0">{formatTimeAgo(device.lastSeen)}</span>
+                <div className="h-1.5 bg-muted rounded-full">
+                  <div className={`h-full ${d.color} rounded-full transition-all duration-1000`} style={{ width: `${d.pct}%` }} />
+                </div>
               </div>
             ))}
           </div>
-        </div>
-
-        {/* Active Alerts */}
-        <div className="lg:col-span-1 glass rounded-2xl p-6 glow-border">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-foreground">Active Alerts</h3>
-            <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30">
-              {RECENT_ALERTS.length} active
-            </span>
-          </div>
-          <div className="space-y-3">
-            {RECENT_ALERTS.slice(0, 4).map((alert) => (
-              <div key={alert.id} className="flex items-start gap-3">
-                <div className={cn("w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0",
-                  alert.severity === "CRITICAL" ? "bg-red-400" :
-                  alert.severity === "HIGH" ? "bg-orange-400" :
-                  alert.severity === "MEDIUM" ? "bg-yellow-400" : "bg-blue-400"
-                )} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-foreground truncate">{alert.device}</p>
-                  <p className="text-xs text-muted-foreground leading-tight mt-0.5 line-clamp-2">{alert.msg}</p>
-                </div>
-                <span className="text-xs text-muted-foreground flex-shrink-0">{formatTimeAgo(alert.time)}</span>
-              </div>
-            ))}
+          <div className="mt-4 pt-4 border-t border-border/30 grid grid-cols-2 gap-3">
+            <div className="text-center">
+              <div className="text-xl font-black text-white">{liveDevices.toLocaleString()}</div>
+              <div className="text-[10px] text-muted-foreground">Total Registered</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black text-cyan-400">8ms</div>
+              <div className="text-[10px] text-muted-foreground">Avg Latency</div>
+            </div>
           </div>
         </div>
 
-        {/* Activity Feed */}
-        <div className="lg:col-span-1 glass rounded-2xl p-6 glow-border">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-foreground">Activity Feed</h3>
-          </div>
-          <div className="space-y-3">
-            {activityFeed.slice(0, 5).map((activity, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <span className="text-base flex-shrink-0">{activity.icon}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-muted-foreground leading-tight line-clamp-2">{activity.msg}</p>
-                  <p className="text-xs text-muted-foreground/50 mt-1">{formatTimeAgo(activity.time)}</p>
-                </div>
-              </div>
+        {/* Quick links */}
+        <div className="glass rounded-2xl p-5 glow-border">
+          <div className="text-sm font-bold text-white mb-4">Quick Actions</div>
+          <div className="grid grid-cols-2 gap-2.5">
+            {quickLinks.map((l, i) => (
+              <Link key={i} href={l.href}
+                className={`flex items-center gap-2.5 p-3 rounded-xl bg-${l.color}-500/8 border border-${l.color}-500/20 hover:border-${l.color}-400/40 hover:bg-${l.color}-500/15 transition-all group`}>
+                <span className={`text-${l.color}-400 group-hover:scale-110 transition-transform`}>{l.icon}</span>
+                <span className="text-xs font-semibold text-slate-300 group-hover:text-white transition-colors">{l.label}</span>
+              </Link>
             ))}
           </div>
         </div>
       </div>
 
-      {/* AI Model Performance Table */}
-      <div className="glass rounded-2xl p-6 glow-border">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="font-semibold text-foreground">AI Model Performance</h3>
-            <p className="text-xs text-muted-foreground">Live inference metrics across all deployed models</p>
+      {/* Activity + Model Performance */}
+      <div className="grid lg:grid-cols-2 gap-4">
+        {/* Recent events */}
+        <div className="glass rounded-2xl p-5 glow-border">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-sm font-bold text-white">Recent Events</span>
+            <LiveBadge />
           </div>
-          <Link href="/ai-models" className="text-xs text-primary hover:underline flex items-center gap-1">
-            Manage models <ChevronRight className="w-3 h-3" />
-          </Link>
+          <div className="space-y-3">
+            {recentEvents.map((ev, i) => (
+              <div key={i} className="flex items-start gap-3 py-2 border-b border-border/20 last:border-0">
+                <div className="w-6 h-6 rounded-lg bg-muted/30 flex items-center justify-center shrink-0">{ev.icon}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-slate-300 leading-snug">{ev.text}</p>
+                </div>
+                <span className="text-[10px] text-muted-foreground font-mono shrink-0 flex items-center gap-1">
+                  <Clock className="w-3 h-3" />{ev.time}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border/50">
-                <th className="text-left text-xs font-medium text-muted-foreground pb-3">Model</th>
-                <th className="text-left text-xs font-medium text-muted-foreground pb-3">Accuracy</th>
-                <th className="text-left text-xs font-medium text-muted-foreground pb-3">Latency</th>
-                <th className="text-left text-xs font-medium text-muted-foreground pb-3">Requests/24h</th>
-                <th className="text-left text-xs font-medium text-muted-foreground pb-3">Status</th>
-              </tr>
-            </thead>
-            <tbody className="space-y-1">
-              {modelPerformance.map((model, i) => (
-                <tr key={i} className="data-table-row">
-                  <td className="py-3 pr-4">
-                    <span className="font-medium text-foreground">{model.name}</span>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-16 h-1.5 bg-muted rounded-full">
-                        <div className="h-full bg-green-400 rounded-full" style={{ width: `${model.accuracy}%` }} />
-                      </div>
-                      <span className="text-green-400 text-xs">{model.accuracy}%</span>
-                    </div>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <span className="text-cyan-400">{model.latency}ms</span>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <span className="text-foreground">{model.requests.toLocaleString()}</span>
-                  </td>
-                  <td className="py-3">
-                    <span className={cn("text-xs px-2 py-0.5 rounded-full",
-                      model.status === "DEPLOYED" ? "bg-green-400/10 text-green-400 border border-green-400/20" :
-                      "bg-blue-400/10 text-blue-400 border border-blue-400/20"
-                    )}>{model.status}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
-      {/* Quick Actions */}
-      <div className="glass rounded-2xl p-6 glow-border">
-        <h3 className="font-semibold text-foreground mb-4">Quick Actions</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { icon: <Cpu className="w-5 h-5" />, label: "Register Device", href: "/devices", color: "cyan" },
-            { icon: <Brain className="w-5 h-5" />, label: "Upload Model", href: "/ai-models", color: "violet" },
-            { icon: <Zap className="w-5 h-5" />, label: "Create Automation", href: "/automations", color: "yellow" },
-            { icon: <Database className="w-5 h-5" />, label: "Export Data", href: "/export", color: "green" },
-          ].map((action, i) => (
-            <Link key={i} href={action.href}
-              className={cn("flex items-center gap-3 p-4 rounded-xl border transition-all duration-200 hover:-translate-y-0.5",
-                `bg-${action.color}-500/5 border-${action.color}-500/20 hover:border-${action.color}-500/40 hover:bg-${action.color}-500/10`)}>
-              <div className={`text-${action.color}-400`}>{action.icon}</div>
-              <span className="text-sm font-medium text-foreground">{action.label}</span>
+        {/* Model performance */}
+        <div className="glass rounded-2xl p-5 glow-border">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-sm font-bold text-white">Top Models</span>
+            <Link href="/ai-models" className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1">
+              Manage <ChevronRight className="w-3 h-3" />
             </Link>
+          </div>
+          <div className="space-y-4">
+            {[
+              { name: "YOLOv8 Edge Detector", acc: 94.2, lat: 28, devices: 128, framework: "TFLite", status: "DEPLOYED" },
+              { name: "Anomaly Sentinel", acc: 91.8, lat: 12, devices: 64, framework: "ONNX", status: "DEPLOYED" },
+              { name: "NLP Intent Classifier", acc: 88.5, lat: 45, devices: 32, framework: "PyTorch", status: "DEPLOYED" },
+              { name: "MobileNet Classifier", acc: 92.1, lat: 8, devices: 256, framework: "TFLite", status: "TRAINED" },
+            ].map((m, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500/20 to-violet-600/20 flex items-center justify-center text-[10px] font-mono font-bold text-cyan-400 shrink-0">
+                  {m.framework.slice(0, 2)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-white truncate">{m.name}</span>
+                    <span className="text-[10px] font-mono text-green-400 ml-2 shrink-0">{m.acc}%</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                    <span><Zap className="w-2.5 h-2.5 inline mr-0.5 text-amber-400" />{m.lat}ms</span>
+                    <span><Cpu className="w-2.5 h-2.5 inline mr-0.5 text-cyan-400" />{m.devices} devices</span>
+                    <span className={`ml-auto px-1.5 py-0.5 rounded font-mono ${m.status === "DEPLOYED" ? "text-green-400 bg-green-400/10" : "text-amber-400 bg-amber-400/10"}`}>{m.status}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Telemetry chart */}
+      <div className="glass rounded-2xl p-5 glow-border">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <span className="text-sm font-bold text-white">Fleet Telemetry — Last 24h</span>
+            <span className="text-xs text-muted-foreground ml-3">All device readings aggregated</span>
+          </div>
+          <div className="flex gap-3">
+            {[{ label: "CPU", color: "bg-cyan-400" }, { label: "Memory", color: "bg-violet-400" }, { label: "Network", color: "bg-emerald-400" }].map((leg, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <div className={`w-2 h-2 rounded-full ${leg.color}`} />{leg.label}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { data: cpuHistory, color: "#00d4ff", label: "CPU Usage" },
+            { data: memHistory, color: "#7c3aed", label: "Memory" },
+            { data: netHistory, color: "#10b981", label: "Network I/O" },
+          ].map((chart, i) => (
+            <div key={i}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] text-muted-foreground">{chart.label}</span>
+                <span className="text-[10px] font-mono" style={{ color: chart.color }}>
+                  {Math.round(chart.data[chart.data.length - 1])}%
+                </span>
+              </div>
+              <Sparkline data={chart.data} color={chart.color} />
+            </div>
           ))}
         </div>
       </div>

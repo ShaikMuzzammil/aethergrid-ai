@@ -101,3 +101,66 @@
     @apply border-b border-border/50 hover:bg-muted/30 transition-colors duration-150;
   }
 }
+
+/* ── Ticker animation ── */
+@keyframes ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-33.333%); }
+}
+.animate-ticker {
+  animation: ticker 28s linear infinite;
+  width: max-content;
+}
+
+/* ── Pulse dot ── */
+.status-dot { @apply inline-block w-2 h-2 rounded-full; }
+.status-online { @apply bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.8)]; animation: pulse-glow 2s infinite; }
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(74,222,128,0.8); }
+  50% { opacity: 0.6; box-shadow: 0 0 12px rgba(74,222,128,1); }
+}
+
+/* ── Hexagonal grid ── */
+.hex-grid {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100'%3E%3Cpath fill='none' stroke='rgba(0,212,255,0.04)' d='M28 66L0 50V16L28 0l28 16v34z'/%3E%3Cpath fill='none' stroke='rgba(0,212,255,0.04)' d='M28 100L0 84V50l28-16 28 16v34zM56 50L28 34V0M28 34L0 18'/%3E%3C/svg%3E");
+  background-size: 56px 100px;
+}
+
+/* ── Neon button ── */
+.btn-neon {
+  @apply relative overflow-hidden;
+}
+.btn-neon::before {
+  content: '';
+  @apply absolute inset-0 bg-gradient-to-r from-cyan-500/20 to-violet-600/20 opacity-0 transition-opacity;
+}
+.btn-neon:hover::before { @apply opacity-100; }
+
+/* ── Scan line ── */
+@keyframes scan {
+  0% { top: -2px; }
+  100% { top: 100%; }
+}
+.scan-line::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0,212,255,0.4), transparent);
+  animation: scan 3s linear infinite;
+}
+
+/* ── Font variables ── */
+:root {
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+body { font-family: var(--font-display); }
+code, pre, .font-mono { font-family: var(--font-mono); }
+
+/* ── Gradient text fix ── */
+.gradient-text {
+  background: linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
