@@ -1,72 +1,64 @@
-# AetherGrid AI — Deploy in 3 Steps
+# AetherGrid AI — Deployment Guide
 
-## Step 1 — Set up Neon DB (free)
+## One-Shot Deploy
 
-1. Go to **https://neon.tech** → sign up → New Project → name it `aethergrid-ai`
-2. Click **Connection Details** → choose **Prisma** → copy the connection string
-3. Keep it handy — you'll need it in Step 3
-
----
-
-## Step 2 — Push to GitHub
-
-**Option A — Script (recommended):**
 ```bash
-# Extract the zip, then:
-cd aethergrid-fixed
-bash push.sh https://github.com/ShaikMuzzammil/aethergrid-ai.git
-```
-> This wipes old git history and force-replaces the GitHub repo cleanly.
-
-**Option B — Manual git:**
-```bash
-cd aethergrid-fixed
-rm -rf .git
-rm -rf "src/app/(auth)"    # removes any leftover route group
-git init
-git branch -M main
-git add -A
-git commit -m "fix: clean AetherGrid AI"
-git remote add origin https://github.com/ShaikMuzzammil/aethergrid-ai.git
-git push origin main --force
+bash push.sh https://github.com/YourUsername/aethergrid-ai.git
 ```
 
----
+## Required Vercel Environment Variables
 
-## Step 3 — Vercel (auto-deploys on push)
+| Variable | Value | Where to get |
+|----------|-------|-------------|
+| `DATABASE_URL` | `postgres://...?pgbouncer=true&connection_limit=1` | Neon → Connection String (pooled) |
+| `DIRECT_URL` | `postgres://...` | Neon → Connection String (direct) |
+| `NEXTAUTH_SECRET` | Random string | Run: `openssl rand -base64 32` |
+| `NEXTAUTH_URL` | `https://your-app.vercel.app` | Your Vercel deployment URL |
 
-1. Go to **https://vercel.com** → your `aethergrid-ai` project → **Settings → Environment Variables**
-2. Add these variables (all environments):
+## Step-by-Step
 
-| Variable | Value |
-|----------|-------|
-| `DATABASE_URL` | Your Neon connection string |
-| `DIRECT_URL` | Same Neon connection string |
-| `NEXTAUTH_SECRET` | Run: `openssl rand -base64 32` |
+1. **Create Neon Database** (free at neon.tech)
+   - New project → copy both connection strings
 
-3. Click **Deployments → Redeploy** (or just push to GitHub to trigger auto-deploy)
+2. **Push to GitHub**
+   ```bash
+   bash push.sh https://github.com/YOUR_USERNAME/aethergrid-ai.git
+   ```
 
----
+3. **Connect to Vercel**
+   - Import GitHub repo at vercel.com/new
+   - Add all 4 env vars
+   - Deploy
 
-## Seed demo data (run once after deploy)
+4. **Seed the Database** (optional but recommended)
+   ```bash
+   # In the repo root with DIRECT_URL set:
+   npm run db:push && npm run db:seed
+   ```
 
-From your local machine with `.env` set:
-```bash
-npm install
-npm run db:push
-npm run db:seed
-```
+## Demo Credentials
 
-**Demo login:** `demo@aethergrid.ai` / `DemoPass123!`
+After first deploy (or after seeding), log in with:
 
----
+- **Email:** `demo@aethergrid.ai`
+- **Password:** `DemoPass123!`
 
-## If build still fails on Vercel
+> **Note:** If you don't run db:seed, the demo user is **auto-created** on first login attempt — just click "Demo Login" on the login page.
 
-Go to GitHub.com → your repo → `src/app/` and check:
+## Build Troubleshooting
 
-- ❌ If you see **both** a `(auth)` folder AND a `login` folder → delete the `login` and `register` folders via GitHub web UI
-- ❌ If you see **both** `(auth)` and `login` inside `(auth)` → delete the `(auth)` folder via GitHub web UI
+| Error | Fix |
+|-------|-----|
+| `DATABASE_URL is not set` | Add env vars to Vercel |
+| `Invalid credentials` | Click "Demo Login" — it auto-creates the user |
+| `Registration failed` | Check DATABASE_URL is the pooled URL |
+| `Internal server error` | Check NEXTAUTH_SECRET is set |
 
-Only ONE of these should exist: either `login/` at the top level OR `(auth)/login/` — never both.
+## Tech Stack
 
+- **Framework:** Next.js 15.5 + TypeScript + Tailwind CSS
+- **Auth:** NextAuth.js v4 with JWT sessions
+- **Database:** PostgreSQL via Prisma + Neon
+- **UI:** Lucide React + Recharts + Framer Motion + Sonner
+- **Fonts:** Space Grotesk (display) + JetBrains Mono (code)
+- **Deploy:** Vercel Edge Network
