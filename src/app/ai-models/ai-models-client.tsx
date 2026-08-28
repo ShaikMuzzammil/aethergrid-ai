@@ -8,7 +8,7 @@ import {
   Eye, Trash2, Settings, AlertTriangle, Clock, Award, BarChart2,
   Layers, Code, FlaskConical, Rocket
 } from "lucide-react";
-import { cn, getStatusColor, formatTimeAgo } from "@/lib/utils";
+import { cn, getStatusColor } from "@/lib/utils";
 import { toast } from "sonner";
 
 const FRAMEWORKS = ["TENSORFLOW", "PYTORCH", "ONNX", "TFLITE", "OPENVINO", "CUSTOM"];

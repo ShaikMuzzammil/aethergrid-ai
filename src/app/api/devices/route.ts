@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
       prisma.device.count({ where: { userId: (session.user as any).id } }),
     ]);
     return NextResponse.json({ devices, total, page, pages: Math.ceil(total / limit) });
-  } catch (e) { return NextResponse.json({ error: "Failed to fetch devices" }, { status: 500 }); }
+  } catch (_e) { return NextResponse.json({ error: "Failed to fetch devices" }, { status: 500 }); }
 }
 
 export async function POST(req: NextRequest) {

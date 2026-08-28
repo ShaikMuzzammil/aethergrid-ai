@@ -1,17 +1,16 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, useInView, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import {
-  Cpu, Radio, Brain, Zap, Shield, Globe, BarChart3, Layers, Code,
-  Check, Star, ArrowRight, Activity, Server, Wifi,
-  Lock, Database, Terminal, Network, Eye, Rocket,
-  CircuitBoard, Bot, TrendingUp, Users, Menu, X,
-  Cloud, Microchip, Gauge, GitBranch, Package, Key,
-  FlaskConical, Cog, LineChart, MonitorDot, Fingerprint,
+  Cpu, Radio, Brain, Zap, Shield, Globe, BarChart3, Code,
+  Check, Star, ArrowRight, Activity, Database, Network, Eye, Rocket,
+  CircuitBoard, TrendingUp, Users, Menu, X,
+  Cloud, Gauge, Package, Key,
+  FlaskConical, LineChart, MonitorDot, Fingerprint,
   ChevronDown, PlayCircle, ExternalLink, BookOpen,
-  AlertCircle, CheckCircle2, Clock, Workflow, BrainCircuit,
-  SlidersHorizontal, Map, FileJson, Mail, Twitter, Github, Linkedin
+  AlertCircle, CheckCircle2, Workflow, BrainCircuit,
+  SlidersHorizontal, Map, FileJson, Twitter, Github, Linkedin
 } from "lucide-react";
 
 // ─── Live Network Canvas ──────────────────────────────────────────────────────
@@ -846,7 +845,7 @@ ag.devices.stream(<span class="text-green-300">'dev_esp32_01'</span>)
           <SectionHeader
             tag="💳 PRICING"
             title={<>Simple, transparent<br /><span className="gradient-text">pricing</span></>}
-            sub="Start free, scale when you're ready. No hidden fees, no vendor lock-in."
+            sub="Start free, scale when youyou're readyapos;re ready. No hidden fees, no vendor lock-in."
           />
           <div className="flex justify-center gap-2 mb-10">
             {(["monthly", "annual"] as const).map((p) => (

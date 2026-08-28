@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  eslint: { ignoreDuringBuilds: true },      // ESLint runs separately in CI
+  typescript: { ignoreBuildErrors: false },   // Keep TS errors strict
   serverExternalPackages: ["@prisma/client", "prisma"],
   images: {
     remotePatterns: [

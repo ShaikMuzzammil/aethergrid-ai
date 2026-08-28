@@ -2,8 +2,8 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Download, Plus, Search, RefreshCw, CheckCircle, Clock, XCircle,
-  FileText, Database, Code, Globe, Cpu, Zap, File, Archive, X
+  Download, Plus, Search, RefreshCw, CheckCircle, XCircle,
+  FileText, Database, Code, Globe, File, Archive, X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -49,7 +49,7 @@ function NewExportModal({ onClose }: { onClose: () => void }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [source, setSource] = useState(DATA_SOURCES[0]);
   const [dateRange, setDateRange] = useState("last_7_days");
-  const [exporting, setExporting] = useState(false);
+  const [_exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [step, setStep] = useState<"config" | "running">("config");
 

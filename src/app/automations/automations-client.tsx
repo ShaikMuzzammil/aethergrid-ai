@@ -2,9 +2,8 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Zap, Plus, Search, Play, Pause, Trash2, Edit, ChevronRight,
-  AlertTriangle, Bell, Mail, Webhook, Terminal, RefreshCw,
-  Check, X, Clock, Activity, ArrowRight, ToggleLeft, ToggleRight
+  Zap, Plus, Search, Play, Trash2, Edit,
+  RefreshCw, Check, X, Clock, Activity, ArrowRight, ToggleLeft, ToggleRight
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";

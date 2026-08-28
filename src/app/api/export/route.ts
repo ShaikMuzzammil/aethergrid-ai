@@ -10,7 +10,7 @@ const schema = z.object({
   config: z.record(z.any()).optional(),
 });
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   } catch { return NextResponse.json({ error: "Failed to fetch export jobs" }, { status: 500 }); }
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(_req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {

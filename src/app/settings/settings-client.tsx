@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import {
-  User, Shield, Bell, Palette, Globe, Key, Trash2,
+  User, Shield, Bell, Palette, Globe, Trash2,
   Camera, Check, RefreshCw, Eye, EyeOff, Moon, Sun,
   Smartphone, Mail, Slack, Webhook, ToggleLeft, ToggleRight, Save
 } from "lucide-react";

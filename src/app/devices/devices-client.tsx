@@ -1,11 +1,11 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Cpu, Plus, Search, Filter, RefreshCw, Grid3X3, List,
-  Wifi, WifiOff, AlertTriangle, MoreHorizontal, Terminal,
-  Upload, MapPin, Activity, Clock, ChevronDown, X, Check,
-  Download, Trash2, Power, Edit, Eye, Settings
+  Wifi, WifiOff, AlertTriangle, Terminal,
+  Upload, MapPin, Clock, X, Check,
+  Trash2, Power, Eye, Settings
 } from "lucide-react";
 import { cn, formatTimeAgo, getStatusColor } from "@/lib/utils";
 import { toast } from "sonner";

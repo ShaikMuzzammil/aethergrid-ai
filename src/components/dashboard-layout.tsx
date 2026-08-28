@@ -251,3 +251,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     </div>
   );
 }
+
+// Named export for pages that import { DashboardLayout }
+export { DashboardLayout };

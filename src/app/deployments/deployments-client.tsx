@@ -1,13 +1,13 @@
 "use client";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import {
-  Rocket, Plus, Search, RefreshCw, Play, Square, RotateCcw, Trash2,
-  Server, Cpu, MemoryStick, Globe, Activity, Clock, Check, X,
-  ChevronDown, Terminal, BarChart2, Settings, AlertTriangle, Layers
+  Plus, Search, RefreshCw, Play, Square, RotateCcw, Trash2,
+  Globe, Clock, Check, X,
+  ChevronDown, Terminal, BarChart2, Settings, AlertTriangle
 } from "lucide-react";
-import { cn, getStatusColor, formatTimeAgo } from "@/lib/utils";
+import { cn, getStatusColor } from "@/lib/utils";
 import { toast } from "sonner";
 
 const DEPLOYMENT_TYPES = ["API_SERVICE", "MODEL_SERVING", "WEB_APP", "BACKGROUND_WORKER", "DATA_PIPELINE", "EDGE_FUNCTION"];

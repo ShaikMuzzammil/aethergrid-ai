@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Network, Search, Check, Plus, ExternalLink, RefreshCw } from "lucide-react";
+import { Search, Plus, ExternalLink, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 

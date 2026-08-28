@@ -5,7 +5,7 @@ import {
   ScatterChart, Scatter, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine
 } from "recharts";
-import { BarChart3, TrendingUp, Download, Filter, RefreshCw, Calendar, Activity, Cpu, Brain, Globe } from "lucide-react";
+import { BarChart3, TrendingUp, Download, Filter, Brain, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 

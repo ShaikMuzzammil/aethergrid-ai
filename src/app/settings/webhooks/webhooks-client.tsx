@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Webhook, Plus, Trash2, Edit, CheckCircle, XCircle, RefreshCw, X, ToggleLeft, ToggleRight, Copy, Shield } from "lucide-react";
+import { Webhook, Plus, Trash2, CheckCircle, RefreshCw, X, ToggleLeft, ToggleRight, Copy, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -161,7 +161,7 @@ export function WebhooksClient() {
                 <span>Last: {wh.lastDelivery}</span>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => testWebhook(wh)} className="px-3 py-1.5 rounded-lg border border-border/50 hover:border-primary/40 hover:text-primary text-muted-foreground transition-all text-xs">Test</button>
+                <button onClick={() => testWebhook(_wh)} className="px-3 py-1.5 rounded-lg border border-border/50 hover:border-primary/40 hover:text-primary text-muted-foreground transition-all text-xs">Test</button>
                 <button onClick={() => { navigator.clipboard.writeText(wh.url); toast.success("URL copied!"); }} className="p-1.5 rounded-lg hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"><Copy className="w-3.5 h-3.5" /></button>
                 <button onClick={() => deleteWebhook(wh.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
               </div>

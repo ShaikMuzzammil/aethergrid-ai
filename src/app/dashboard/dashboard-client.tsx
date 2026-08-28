@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
-  Cpu, Brain, Activity, Shield, TrendingUp, AlertTriangle,
+  Cpu, Brain, Shield, AlertTriangle,
   Wifi, WifiOff, Clock, ChevronRight, Zap, RefreshCw,
   BarChart3, Server, Radio, Database
 } from "lucide-react";
@@ -310,3 +310,6 @@ export default function DashboardClient() {
     </div>
   );
 }
+
+// Named export for dashboard/page.tsx
+export { DashboardClient };

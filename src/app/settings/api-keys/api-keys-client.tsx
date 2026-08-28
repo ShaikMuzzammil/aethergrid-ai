@@ -97,7 +97,7 @@ function CreateKeyModal({ onClose, onCreate }: { onClose: () => void; onCreate: 
           ) : (
             <div className="space-y-4">
               <div className="glass rounded-xl p-4 border border-yellow-400/30 bg-yellow-400/5">
-                <p className="text-xs text-yellow-400 font-medium mb-2">⚠️ Copy this key now — it won't be shown again!</p>
+                <p className="text-xs text-yellow-400 font-medium mb-2">⚠️ Copy this key now — it won&apos;t be shown again!</p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 text-xs text-green-400 font-mono bg-black/30 rounded-lg px-3 py-2.5 break-all">{created}</code>
                   <button onClick={copyKey} className={cn("p-2 rounded-lg transition-all flex-shrink-0", copied ? "bg-green-400/20 text-green-400" : "hover:bg-muted/50 text-muted-foreground hover:text-foreground")}>
@@ -133,7 +133,7 @@ export function ApiKeysClient() {
   const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
 
   function toggleVisibility(id: string) {
-    setVisibleKeys(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+    setVisibleKeys(prev => { const next = new Set(prev); if (next.has(id)) { next.delete(id); } else { next.add(id); } return next; });
   }
 
   function maskKey(key: string) { return key.slice(0, 12) + "••••••••••••••••••••" + key.slice(-4); }
