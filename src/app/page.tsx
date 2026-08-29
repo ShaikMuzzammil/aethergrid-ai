@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, useInView, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import {
   Cpu, Radio, Brain, Zap, Shield, Globe, BarChart3, Code,
@@ -10,13 +10,15 @@ import {
   FlaskConical, LineChart, MonitorDot, Fingerprint,
   ChevronDown, PlayCircle, ExternalLink, BookOpen,
   AlertCircle, CheckCircle2, Workflow, BrainCircuit,
-  SlidersHorizontal, Map, FileJson, Twitter, Github, Linkedin
+  SlidersHorizontal, Map, FileJson, Twitter, Github, Linkedin,
+  Server, Layers, GitBranch, Terminal, Cpu as CpuIcon
 } from "lucide-react";
 
-// ─── Live Network Canvas ──────────────────────────────────────────────────────
+// ─── Enhanced Real-Time Network Canvas ────────────────────────────────────────
 function NetworkCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animRef = useRef<number>(0);
+  const animRef   = useRef<number>(0);
+  const mouseRef  = useRef({ x: -9999, y: -9999 });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -24,112 +26,254 @@ function NetworkCanvas() {
     const ctx = canvas.getContext("2d")!;
 
     const resize = () => {
-      canvas.width = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
+      canvas.width  = canvas.offsetWidth  * window.devicePixelRatio;
+      canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
     };
     resize();
     window.addEventListener("resize", resize);
 
+    const onMouse = (e: MouseEvent) => {
+      const r = canvas.getBoundingClientRect();
+      mouseRef.current = { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    canvas.addEventListener("mousemove", onMouse);
+    canvas.addEventListener("mouseleave", () => { mouseRef.current = { x: -9999, y: -9999 }; });
+
+    const W = () => canvas.offsetWidth;
+    const H = () => canvas.offsetHeight;
+
+    type NodeType = { label: string; color: string; glow: string };
+    const NODE_TYPES: NodeType[] = [
+      { label: "ESP32",   color: "#00d4ff", glow: "rgba(0,212,255," },
+      { label: "Jetson",  color: "#7c3aed", glow: "rgba(124,58,237," },
+      { label: "RPi",     color: "#10b981", glow: "rgba(16,185,129," },
+      { label: "STM32",   color: "#f59e0b", glow: "rgba(245,158,11," },
+      { label: "Hub",     color: "#ec4899", glow: "rgba(236,72,153," },
+      { label: "Edge",    color: "#06b6d4", glow: "rgba(6,182,212," },
+    ];
+
     type Node = {
       x: number; y: number; vx: number; vy: number;
-      r: number; color: string; pulse: number; pulseSpeed: number;
-      type: string;
+      r: number; type: NodeType; pulse: number; pulseSpeed: number;
+      ring: number; ringSpeed: number; isHub: boolean;
+      dataRate: number; load: number;
     };
 
-    const colors = ["#00d4ff", "#7c3aed", "#10b981", "#f59e0b", "#06b6d4"];
-    const types = ["ESP32", "Jetson", "RPi", "STM32", "Hub"];
-    const nodes: Node[] = Array.from({ length: 28 }, (_, i) => ({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
-      vx: (Math.random() - 0.5) * 0.4,
-      vy: (Math.random() - 0.5) * 0.4,
-      r: i < 3 ? 7 : 4 + Math.random() * 3,
-      color: colors[i % colors.length],
-      pulse: Math.random() * Math.PI * 2,
-      pulseSpeed: 0.02 + Math.random() * 0.02,
-      type: types[i % types.length],
-    }));
+    const nodes: Node[] = Array.from({ length: 42 }, (_, i) => {
+      const t = NODE_TYPES[i % NODE_TYPES.length];
+      const isHub = i < 5;
+      return {
+        x: Math.random() * W(), y: Math.random() * H(),
+        vx: (Math.random() - 0.5) * (isHub ? 0.2 : 0.5),
+        vy: (Math.random() - 0.5) * (isHub ? 0.2 : 0.5),
+        r: isHub ? 9 : 4 + Math.random() * 4,
+        type: t, pulse: Math.random() * Math.PI * 2,
+        pulseSpeed: 0.015 + Math.random() * 0.025,
+        ring: 0, ringSpeed: 0.008 + Math.random() * 0.012,
+        isHub, dataRate: 80 + Math.random() * 920,
+        load: Math.random(),
+      };
+    });
 
-    type Packet = { fromIdx: number; toIdx: number; t: number; speed: number; color: string };
+    type Packet = {
+      fromIdx: number; toIdx: number; t: number; speed: number;
+      color: string; size: number; trail: Array<{ x: number; y: number }>;
+    };
     const packets: Packet[] = [];
     let frame = 0;
+    const LINK_DIST = 200;
+    const HUB_DIST  = 320;
 
-    const LINK_DIST = 180;
+    function spawnPacket() {
+      if (packets.length >= 35) return;
+      const a = Math.floor(Math.random() * nodes.length);
+      let b = Math.floor(Math.random() * nodes.length);
+      while (b === a) b = Math.floor(Math.random() * nodes.length);
+      const dist = Math.hypot(nodes[a].x - nodes[b].x, nodes[a].y - nodes[b].y);
+      const maxD = nodes[a].isHub || nodes[b].isHub ? HUB_DIST : LINK_DIST;
+      if (dist > maxD) return;
+      packets.push({
+        fromIdx: a, toIdx: b, t: 0,
+        speed: 0.005 + Math.random() * 0.012,
+        color: nodes[a].type.color,
+        size: 2 + Math.random() * 2,
+        trail: [],
+      });
+    }
+
+    function drawGlowCircle(x: number, y: number, r: number, color: string, alpha: number) {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r * 2.5);
+      g.addColorStop(0, color.replace(")", `,${alpha})`).replace("rgb", "rgba"));
+      g.addColorStop(1, "transparent");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r * 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     const draw = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const w = W(), h = H();
+      ctx.clearRect(0, 0, w, h);
       frame++;
 
       // Spawn packets
-      if (frame % 30 === 0 && packets.length < 25) {
-        const a = Math.floor(Math.random() * nodes.length);
-        let b = Math.floor(Math.random() * nodes.length);
-        while (b === a) b = Math.floor(Math.random() * nodes.length);
-        packets.push({ fromIdx: a, toIdx: b, t: 0, speed: 0.008 + Math.random() * 0.012, color: colors[Math.floor(Math.random() * colors.length)] });
-      }
+      if (frame % 18 === 0) spawnPacket();
+
+      // Move nodes
+      nodes.forEach(n => {
+        // Mouse repulsion
+        const dx = n.x - mouseRef.current.x;
+        const dy = n.y - mouseRef.current.y;
+        const d  = Math.hypot(dx, dy);
+        if (d < 120 && d > 0) {
+          n.vx += (dx / d) * 0.4;
+          n.vy += (dy / d) * 0.4;
+        }
+        n.vx *= 0.98; n.vy *= 0.98;
+        n.x  += n.vx; n.y  += n.vy;
+        if (n.x < n.r)     { n.x = n.r;     n.vx *= -1; }
+        if (n.x > w - n.r) { n.x = w - n.r; n.vx *= -1; }
+        if (n.y < n.r)     { n.y = n.r;     n.vy *= -1; }
+        if (n.y > h - n.r) { n.y = h - n.r; n.vy *= -1; }
+        n.pulse += n.pulseSpeed;
+        n.ring  = (n.ring + n.ringSpeed) % 1;
+      });
 
       // Draw edges
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
-          const dx = nodes[i].x - nodes[j].x;
-          const dy = nodes[i].y - nodes[j].y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < LINK_DIST) {
-            const alpha = (1 - dist / LINK_DIST) * 0.18;
-            ctx.beginPath();
-            ctx.moveTo(nodes[i].x, nodes[i].y);
-            ctx.lineTo(nodes[j].x, nodes[j].y);
-            ctx.strokeStyle = `rgba(0,212,255,${alpha})`;
-            ctx.lineWidth = 0.8;
-            ctx.stroke();
-          }
+          const ni = nodes[i], nj = nodes[j];
+          const dx = ni.x - nj.x, dy = ni.y - nj.y;
+          const dist = Math.hypot(dx, dy);
+          const maxD = ni.isHub || nj.isHub ? HUB_DIST : LINK_DIST;
+          if (dist > maxD) continue;
+
+          const alpha = (1 - dist / maxD) * (ni.isHub || nj.isHub ? 0.35 : 0.18);
+          const grad  = ctx.createLinearGradient(ni.x, ni.y, nj.x, nj.y);
+          grad.addColorStop(0, ni.type.color + Math.round(alpha * 255).toString(16).padStart(2, "0"));
+          grad.addColorStop(1, nj.type.color + Math.round(alpha * 255).toString(16).padStart(2, "0"));
+          ctx.strokeStyle = grad;
+          ctx.lineWidth   = ni.isHub || nj.isHub ? 1.2 : 0.7;
+          ctx.beginPath();
+          ctx.moveTo(ni.x, ni.y);
+          ctx.lineTo(nj.x, nj.y);
+          ctx.stroke();
         }
       }
 
-      // Draw packets
+      // Draw packets + trails
       for (let i = packets.length - 1; i >= 0; i--) {
         const p = packets[i];
         p.t += p.speed;
         if (p.t >= 1) { packets.splice(i, 1); continue; }
-        const from = nodes[p.fromIdx];
-        const to = nodes[p.toIdx];
-        const px = from.x + (to.x - from.x) * p.t;
-        const py = from.y + (to.y - from.y) * p.t;
+
+        const fn = nodes[p.fromIdx], tn = nodes[p.toIdx];
+        const px = fn.x + (tn.x - fn.x) * p.t;
+        const py = fn.y + (tn.y - fn.y) * p.t;
+
+        // Trail
+        p.trail.push({ x: px, y: py });
+        if (p.trail.length > 12) p.trail.shift();
+        for (let k = 0; k < p.trail.length - 1; k++) {
+          const a = (k / p.trail.length) * 0.7;
+          ctx.strokeStyle = p.color + Math.round(a * 255).toString(16).padStart(2, "0");
+          ctx.lineWidth   = p.size * (k / p.trail.length);
+          ctx.beginPath();
+          ctx.moveTo(p.trail[k].x, p.trail[k].y);
+          ctx.lineTo(p.trail[k + 1].x, p.trail[k + 1].y);
+          ctx.stroke();
+        }
+
+        // Packet dot with glow
+        const gl = ctx.createRadialGradient(px, py, 0, px, py, p.size * 4);
+        gl.addColorStop(0, p.color + "ff");
+        gl.addColorStop(0.4, p.color + "88");
+        gl.addColorStop(1, "transparent");
+        ctx.fillStyle = gl;
         ctx.beginPath();
-        ctx.arc(px, py, 2.5, 0, Math.PI * 2);
-        ctx.fillStyle = p.color;
-        ctx.shadowBlur = 8;
-        ctx.shadowColor = p.color;
+        ctx.arc(px, py, p.size * 4, 0, Math.PI * 2);
         ctx.fill();
-        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(px, py, p.size * 0.8, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       // Draw nodes
-      for (const n of nodes) {
-        n.x += n.vx;
-        n.y += n.vy;
-        if (n.x < 0 || n.x > canvas.width) n.vx *= -1;
-        if (n.y < 0 || n.y > canvas.height) n.vy *= -1;
-        n.pulse += n.pulseSpeed;
-        const glow = 0.5 + 0.5 * Math.sin(n.pulse);
+      nodes.forEach(n => {
+        const pulse = 0.6 + 0.4 * Math.sin(n.pulse);
 
-        // Outer glow ring
+        // Glow halo
+        const glowR = n.r * (n.isHub ? 5 : 3.5);
+        const glow  = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, glowR);
+        glow.addColorStop(0, n.type.glow + (pulse * 0.35) + ")");
+        glow.addColorStop(1, "transparent");
+        ctx.fillStyle = glow;
         ctx.beginPath();
-        ctx.arc(n.x, n.y, n.r + 4 + glow * 4, 0, Math.PI * 2);
-        ctx.fillStyle = `${n.color}10`;
+        ctx.arc(n.x, n.y, glowR, 0, Math.PI * 2);
         ctx.fill();
 
+        // Expanding ring for hub nodes
+        if (n.isHub) {
+          const ringR = n.r + n.ring * 30;
+          const ringA = (1 - n.ring) * 0.5;
+          ctx.strokeStyle = n.type.glow + ringA + ")";
+          ctx.lineWidth   = 1.5;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, ringR, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // Node circle
+        const grad = ctx.createRadialGradient(n.x - n.r * 0.3, n.y - n.r * 0.3, 0, n.x, n.y, n.r);
+        grad.addColorStop(0, "#ffffff33");
+        grad.addColorStop(1, n.type.color + "cc");
+        ctx.fillStyle = grad;
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
-        ctx.fillStyle = n.color;
-        ctx.shadowBlur = 12 + glow * 8;
-        ctx.shadowColor = n.color;
         ctx.fill();
-        ctx.shadowBlur = 0;
-      }
+
+        // Border
+        ctx.strokeStyle = n.type.color;
+        ctx.lineWidth   = n.isHub ? 2 : 1;
+        ctx.stroke();
+
+        // Label for hubs
+        if (n.isHub) {
+          ctx.fillStyle = n.type.color;
+          ctx.font      = "bold 9px 'JetBrains Mono', monospace";
+          ctx.textAlign = "center";
+          ctx.fillText(n.type.label, n.x, n.y + n.r + 11);
+        }
+
+        // Load indicator ring
+        ctx.strokeStyle = n.type.color + "66";
+        ctx.lineWidth   = 2;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r + 3, -Math.PI / 2, -Math.PI / 2 + n.load * Math.PI * 2);
+        ctx.stroke();
+      });
+
+      // Live stats overlay (top-right corner of canvas)
+      const activeCount = packets.length;
+      ctx.fillStyle = "rgba(0,212,255,0.08)";
+      ctx.fillRect(w - 160, 12, 148, 70);
+      ctx.strokeStyle = "rgba(0,212,255,0.2)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(w - 160, 12, 148, 70);
+      ctx.font = "bold 9px 'JetBrains Mono', monospace";
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#00d4ff";
+      ctx.fillText("● LIVE NETWORK", w - 150, 28);
+      ctx.fillStyle = "rgba(255,255,255,0.6)";
+      ctx.fillText(`Nodes:    ${nodes.length}`, w - 150, 44);
+      ctx.fillText(`Packets:  ${activeCount}`, w - 150, 57);
+      ctx.fillText(`Frame:    ${frame}`, w - 150, 70);
 
       animRef.current = requestAnimationFrame(draw);
     };
+
     draw();
     return () => {
       cancelAnimationFrame(animRef.current);
@@ -137,890 +281,603 @@ function NetworkCanvas() {
     };
   }, []);
 
-  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full opacity-60" />;
+  return (
+    <canvas
+      ref={canvasRef}
+      className="absolute inset-0 w-full h-full cursor-crosshair"
+      style={{ opacity: 0.85 }}
+    />
+  );
 }
 
-// ─── Animated Counter ─────────────────────────────────────────────────────────
-function Counter({ to, suffix = "", prefix = "" }: { to: number; suffix?: string; prefix?: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
+// ─── Animated counter ─────────────────────────────────────────────────────────
+function Counter({ to, suffix = "", duration = 2 }: { to: number; suffix?: string; duration?: number }) {
+  const ref  = useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true });
   const [val, setVal] = useState(0);
 
   useEffect(() => {
     if (!inView) return;
-    let start = 0;
-    const duration = 1800;
-    const step = (ts: number) => {
-      if (!start) start = ts;
-      const prog = Math.min((ts - start) / duration, 1);
-      const ease = 1 - Math.pow(1 - prog, 3);
-      setVal(Math.floor(ease * to));
-      if (prog < 1) requestAnimationFrame(step);
-      else setVal(to);
+    const start   = Date.now();
+    const tick = () => {
+      const elapsed = (Date.now() - start) / (duration * 1000);
+      const t = Math.min(elapsed, 1);
+      setVal(Math.floor(t * to));
+      if (t < 1) requestAnimationFrame(tick);
     };
-    requestAnimationFrame(step);
-  }, [inView, to]);
+    requestAnimationFrame(tick);
+  }, [inView, to, duration]);
 
-  return <span ref={ref}>{prefix}{val.toLocaleString()}{suffix}</span>;
+  return <span ref={ref}>{val.toLocaleString()}{suffix}</span>;
 }
 
-// ─── Live Ticker ──────────────────────────────────────────────────────────────
-const tickerItems = [
-  "🟢 2,847 devices online",
-  "⚡ 1.2 TB data/sec",
-  "🧠 34 models deployed",
-  "📡 128 regions active",
-  "🔒 99.99% uptime",
-  "🚀 ESP32 → NVIDIA Jetson",
-  "💡 8ms edge inference",
-  "🌐 50+ ML frameworks",
-  "📊 Real-time analytics",
-  "🔄 Auto-OTA updates",
+// ─── Section wrapper ──────────────────────────────────────────────────────────
+function Section({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  const ref    = useRef(null);
+  const inView = useInView(ref, { once: true, margin: "-80px" });
+  return (
+    <motion.div ref={ref} initial={{ opacity: 0, y: 40 }} animate={inView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.6 }} className={className}>
+      {children}
+    </motion.div>
+  );
+}
+
+// ─── Data ─────────────────────────────────────────────────────────────────────
+const TICKER_ITEMS = [
+  "42,819 devices online", "94.2% model accuracy", "28ms avg latency",
+  "12.4B inferences/day", "3 new models deployed", "99.97% platform uptime",
+  "6 firmware OTA updates", "1,240 edge clusters", "ESP32 · Jetson · RPi · STM32",
+  "Zero cold-start pods", "Auto-scaling enabled", "End-to-end encrypted",
 ];
 
-function LiveTicker() {
-  return (
-    <div className="relative overflow-hidden bg-gradient-to-r from-cyan-500/10 via-violet-600/10 to-cyan-500/10 border-y border-cyan-500/20 py-3">
-      <div className="flex animate-ticker gap-12 whitespace-nowrap">
-        {[...tickerItems, ...tickerItems, ...tickerItems].map((item, i) => (
-          <span key={i} className="text-xs font-mono text-cyan-400/80 shrink-0">{item}</span>
-        ))}
-      </div>
-    </div>
-  );
-}
+const FEATURES = [
+  { icon: Cpu, color: "cyan",   title: "Universal Device Support",      desc: "Manage ESP32, Jetson Nano, Raspberry Pi, STM32, Arduino, RISC-V and any custom hardware from one unified pane." },
+  { icon: Brain, color: "violet", title: "On-Device ML Inference",      desc: "Deploy TensorFlow Lite, PyTorch, ONNX and OpenVINO models directly to constrained hardware — no cloud round-trip." },
+  { icon: Activity, color: "green", title: "Real-Time Telemetry",       desc: "Sub-50ms streaming dashboards with live sensor readings, anomaly highlighting and instant alerting." },
+  { icon: Shield, color: "yellow",  title: "Zero-Trust Security",       desc: "End-to-end encryption, certificate rotation, API-key management and fine-grained RBAC built in." },
+  { icon: Zap, color: "orange",     title: "OTA Firmware Updates",      desc: "Atomic over-the-air updates with delta compression, rollback support and fleet-wide orchestration." },
+  { icon: BarChart3, color: "pink", title: "Edge Analytics Engine",     desc: "Radar, heatmap, scatter and time-series charts — all computed at the edge and streamed live." },
+  { icon: Workflow, color: "cyan",  title: "Automation Rules",          desc: "Build trigger-action pipelines with 40+ built-in conditions — no code required, unlimited complexity." },
+  { icon: Cloud, color: "violet",   title: "Cloud-Agnostic Sync",       desc: "Bi-directional sync with AWS IoT Core, Azure IoT Hub, GCP Pub/Sub and your own MQTT broker." },
+  { icon: Database, color: "green", title: "Time-Series Storage",       desc: "Append-optimised storage with configurable retention, automatic compression and Parquet exports." },
+  { icon: Code, color: "yellow",    title: "Full REST + WebSocket API",  desc: "OpenAPI 3.1 spec, typed SDKs for Python / Node / Rust, and WebSocket push for live subscriptions." },
+  { icon: Globe, color: "orange",   title: "Global Edge Network",       desc: "Distribute your AI models across 47 PoPs — automatic latency-based routing ensures sub-30ms round trips." },
+  { icon: Key, color: "pink",       title: "API Key Vault",             desc: "Scoped API keys with rate limits, IP allowlists, expiry and per-key audit trails." },
+];
 
-// ─── Code Block ───────────────────────────────────────────────────────────────
-function CodeBlock({ code, lang }: { code: string; lang: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-  return (
-    <div className="relative rounded-xl border border-border/50 bg-[#0a0e1a] overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/30 bg-muted/10">
-        <span className="text-xs text-muted-foreground font-mono">{lang}</span>
-        <button onClick={copy} className="text-xs text-muted-foreground hover:text-cyan-400 transition-colors flex items-center gap-1.5">
-          {copied ? <><CheckCircle2 className="w-3 h-3 text-green-400" /> Copied!</> : <><Code className="w-3 h-3" /> Copy</>}
-        </button>
-      </div>
-      <pre className="p-4 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed">
-        <code dangerouslySetInnerHTML={{ __html: code }} />
-      </pre>
-    </div>
-  );
-}
+const STATS = [
+  { label: "Devices Connected",     value: 2847193,  suffix: "+",  icon: Cpu },
+  { label: "Daily Inferences",      value: 12400000000, suffix: "+", icon: Brain },
+  { label: "Avg Inference Latency", value: 28,        suffix: "ms", icon: Zap },
+  { label: "Platform Uptime",       value: 99.97,     suffix: "%",  icon: Activity },
+];
 
-// ─── Section Header ───────────────────────────────────────────────────────────
-function SectionHeader({ tag, title, sub }: { tag: string; title: React.ReactNode; sub: string }) {
-  return (
-    <div className="text-center mb-16">
-      <span className="inline-flex items-center gap-2 text-xs font-mono text-cyan-400 border border-cyan-400/30 bg-cyan-400/5 px-4 py-1.5 rounded-full mb-5">
-        {tag}
-      </span>
-      <h2 className="text-3xl sm:text-5xl font-black text-white mb-5 tracking-tight">{title}</h2>
-      <p className="text-muted-foreground text-base sm:text-lg max-w-2xl mx-auto leading-relaxed">{sub}</p>
-    </div>
-  );
-}
+const PRICING = [
+  { name: "Free",       price: "$0",   period: "forever",  features: ["10 devices","100K inferences/mo","Community support","1 user","REST API access"], cta: "Start Free", highlight: false },
+  { name: "Pro",        price: "$49",  period: "/ month",  features: ["500 devices","50M inferences/mo","Email support","5 users","WebSocket API","OTA updates","Analytics"], cta: "Start Trial", highlight: true },
+  { name: "Enterprise", price: "Custom", period: "/ month", features: ["Unlimited devices","Unlimited inferences","SLA guarantee","Unlimited users","Dedicated infra","On-prem option","SSO + audit logs"], cta: "Contact Sales", highlight: false },
+];
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+const TESTIMONIALS = [
+  { name: "Dr. Ayaan Kapoor", role: "CTO, Nexus Robotics", body: "AetherGrid cut our edge deployment cycle from weeks to hours. The OTA update system alone saved us an entire engineering sprint per quarter.", stars: 5 },
+  { name: "Priya Venkataraman", role: "ML Lead, GridSense", body: "The inference playground on a $4 ESP32 seemed like science fiction. Now it's our production stack. 94% accuracy at 28ms blew every competitor out of the water.", stars: 5 },
+  { name: "Lars Lindqvist", role: "Head of IoT, Voltur AB", body: "Zero-trust security and automated cert rotation removed 3 months of compliance work. The team onboarded in a day.", stars: 5 },
+];
+
+const USE_CASES = [
+  { id: "manufacturing", label: "Smart Manufacturing",   icon: Gauge,   color: "cyan",   desc: "Deploy YOLOv8 defect-detection models to production-line cameras. Real-time quality gates with < 30ms latency." },
+  { id: "agriculture",   label: "Precision Agriculture", icon: Map,     color: "green",  desc: "Thousands of soil, humidity and NDVI sensors synced to predictive irrigation and yield-forecast models." },
+  { id: "retail",        label: "Retail Intelligence",   icon: Users,   color: "violet", desc: "People-flow analytics, shelf-stock detection and autonomous reorder — all running on low-cost ESP32 nodes." },
+  { id: "energy",        label: "Energy Grids",          icon: Zap,     color: "yellow", desc: "Predict load spikes 15 minutes ahead, auto-route balancing commands, detect grid anomalies at the edge." },
+  { id: "healthcare",    label: "Medical Devices",        icon: Activity, color: "pink",  desc: "HIPAA-compliant telemetry for wearables, infusion pumps and diagnostic equipment with sub-second alerts." },
+];
+
+const colorMap: Record<string, string> = {
+  cyan: "text-cyan-400 bg-cyan-400/10 border-cyan-400/30",
+  violet: "text-violet-400 bg-violet-400/10 border-violet-400/30",
+  green: "text-emerald-400 bg-emerald-400/10 border-emerald-400/30",
+  yellow: "text-yellow-400 bg-yellow-400/10 border-yellow-400/30",
+  orange: "text-orange-400 bg-orange-400/10 border-orange-400/30",
+  pink: "text-pink-400 bg-pink-400/10 border-pink-400/30",
+};
+
+const API_SNIPPET = `import aethergrid as ag
+
+# Authenticate
+client = ag.Client(api_key="ag_live_YOUR_KEY")
+
+# Stream live telemetry from any device
+@client.on_reading("device/*", metrics=["cpu","temp","memory"])
+def handle(reading):
+    if reading.temperature > 75:
+        client.command(reading.device_id, "throttle", {"level": 0.5})
+        client.alert(f"⚠️ {reading.device_id} overheating: {reading.temperature}°C")
+
+# Deploy a TFLite model to a device fleet
+client.models.deploy(
+    model_path="./models/yolov8_edge_v2.tflite",
+    targets=client.devices.filter(type="ESP32", status="ONLINE"),
+    rollout_pct=10,     # Canary: 10% first
+    auto_rollback=True,
+)
+
+print(f"Fleet: {client.devices.online_count:,} devices live")`;
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function LandingPage() {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("manufacturing");
-  const [activePricing, setActivePricing] = useState<"monthly" | "annual">("annual");
   const { scrollY } = useScroll();
-  const navBg = useTransform(scrollY, [0, 80], ["rgba(8,12,20,0)", "rgba(8,12,20,0.95)"]);
-
-  const navLinks = [
-    { label: "Platform", href: "/dashboard" },
-    { label: "Features", href: "#features" },
-    { label: "Architecture", href: "#architecture" },
-    { label: "Pricing", href: "#pricing" },
-    { label: "Docs", href: "/docs" },
-  ];
-
-  const features = [
-    { icon: <Cpu className="w-5 h-5" />, title: "Multi-Device Support", desc: "ESP32, Jetson, RPi, STM32, RISC-V, Arduino and custom hardware — all under one control plane.", color: "cyan" },
-    { icon: <Brain className="w-5 h-5" />, title: "AI Model Registry", desc: "Version-controlled model store with TFLite, ONNX, PyTorch, OpenVINO support and one-click edge deployment.", color: "violet" },
-    { icon: <Radio className="w-5 h-5" />, title: "Real-Time Telemetry", desc: "Sub-100ms sensor data streaming with WebSocket live feeds, anomaly alerts, and historical queries.", color: "emerald" },
-    { icon: <Zap className="w-5 h-5" />, title: "OTA Updates at Scale", desc: "Atomic firmware updates across thousands of devices with rollback, A/B staging, and canary deployments.", color: "amber" },
-    { icon: <Shield className="w-5 h-5" />, title: "Zero-Trust Security", desc: "Per-device PKI certificates, encrypted channels, audit trails, and RBAC access control built in.", color: "rose" },
-    { icon: <BarChart3 className="w-5 h-5" />, title: "Advanced Analytics", desc: "Edge-to-cloud data pipelines with time-series aggregation, anomaly detection, and custom dashboards.", color: "sky" },
-    { icon: <Workflow className="w-5 h-5" />, title: "Automation Engine", desc: "IFTTT-style rule chains, scheduled jobs, and event-driven webhooks with conditional logic.", color: "purple" },
-    { icon: <FileJson className="w-5 h-5" />, title: "Export Anywhere", desc: "One-click export to CSV, JSON, Parquet, PDF reports with email delivery via Resend.", color: "teal" },
-    { icon: <Globe className="w-5 h-5" />, title: "Multi-Region Deploy", desc: "Edge functions across 128+ regions with automatic failover and intelligent traffic routing.", color: "indigo" },
-    { icon: <BrainCircuit className="w-5 h-5" />, title: "MLOps Pipeline", desc: "End-to-end training → evaluation → deployment → monitoring with drift detection.", color: "fuchsia" },
-    { icon: <Key className="w-5 h-5" />, title: "API-First Design", desc: "Full REST + WebSocket API with SDKs for Python, Node.js, Go. GraphQL endpoint coming soon.", color: "orange" },
-    { icon: <Users className="w-5 h-5" />, title: "Team Collaboration", desc: "Shared workspaces, role management, activity feeds, and live collaborative editing.", color: "green" },
-  ];
-
-  const hardwareItems = [
-    { name: "ESP32", spec: "Dual-core 240MHz", power: "0.01W", icon: "🔌" },
-    { name: "ESP8266", spec: "80/160MHz", power: "0.01W", icon: "📡" },
-    { name: "NVIDIA Jetson", spec: "GPU-accelerated", power: "10-15W", icon: "🖥️" },
-    { name: "Raspberry Pi", spec: "Quad-core ARM", power: "3-7W", icon: "🍓" },
-    { name: "STM32", spec: "Cortex-M4", power: "0.001W", icon: "⚡" },
-    { name: "RISC-V", spec: "Open ISA", power: "Custom", icon: "🔬" },
-    { name: "Arduino", spec: "AVR/ARM", power: "0.02W", icon: "🤖" },
-    { name: "Custom", spec: "Any Linux SBC", power: "Varies", icon: "🛠️" },
-  ];
-
-  const mlFrameworks = [
-    { name: "TensorFlow Lite", badge: "Edge", color: "orange" },
-    { name: "PyTorch", badge: "Training", color: "red" },
-    { name: "ONNX Runtime", badge: "Cross-platform", color: "blue" },
-    { name: "OpenVINO", badge: "Intel", color: "sky" },
-    { name: "TensorRT", badge: "NVIDIA", color: "green" },
-    { name: "CoreML", badge: "Apple", color: "gray" },
-  ];
-
-  const useCases = {
-    manufacturing: {
-      title: "Smart Manufacturing",
-      kpis: ["↓ 34% defect rate", "↑ 22% throughput", "↓ 67% downtime"],
-      steps: [
-        { icon: <Cpu className="w-4 h-4" />, text: "Vision sensors on each production line" },
-        { icon: <Brain className="w-4 h-4" />, text: "YOLOv8 model detects defects at 94.2% accuracy" },
-        { icon: <Zap className="w-4 h-4" />, text: "Actuator triggers auto-reject in <10ms" },
-        { icon: <BarChart3 className="w-4 h-4" />, text: "Real-time quality dashboard with trend alerts" },
-      ],
-    },
-    cities: {
-      title: "Smart Cities",
-      kpis: ["↓ 41% energy waste", "↑ 89% sensor uptime", "5-yr ROI proven"],
-      steps: [
-        { icon: <Radio className="w-4 h-4" />, text: "10,000+ IoT sensors city-wide mesh" },
-        { icon: <LineChart className="w-4 h-4" />, text: "Predictive traffic & air quality models" },
-        { icon: <Shield className="w-4 h-4" />, text: "Anomaly detection for infrastructure" },
-        { icon: <Globe className="w-4 h-4" />, text: "Open data API for civic integration" },
-      ],
-    },
-    healthcare: {
-      title: "Healthcare IoT",
-      kpis: ["HIPAA compliant", "99.99% uptime", "<5ms response"],
-      steps: [
-        { icon: <Activity className="w-4 h-4" />, text: "Patient vitals monitoring at the edge" },
-        { icon: <Fingerprint className="w-4 h-4" />, text: "Encrypted transmission to EHR systems" },
-        { icon: <AlertCircle className="w-4 h-4" />, text: "ML-powered early deterioration alerts" },
-        { icon: <CheckCircle2 className="w-4 h-4" />, text: "Compliance audit trails auto-generated" },
-      ],
-    },
-    retail: {
-      title: "Retail & Logistics",
-      kpis: ["↑ 28% sales lift", "↓ 44% shrinkage", "Real-time inventory"],
-      steps: [
-        { icon: <Eye className="w-4 h-4" />, text: "Computer vision for shelf analytics" },
-        { icon: <Map className="w-4 h-4" />, text: "Indoor positioning for asset tracking" },
-        { icon: <Package className="w-4 h-4" />, text: "Automated reorder triggers via API" },
-        { icon: <TrendingUp className="w-4 h-4" />, text: "Demand forecasting models at each site" },
-      ],
-    },
-  };
-
-  const pipelineSteps = [
-    { icon: <Database className="w-5 h-5" />, title: "Ingest", desc: "Connect sensors, upload datasets, or stream MQTT/HTTP data" },
-    { icon: <SlidersHorizontal className="w-5 h-5" />, title: "Preprocess", desc: "Automated feature engineering, normalization, augmentation" },
-    { icon: <FlaskConical className="w-5 h-5" />, title: "Train", desc: "Launch training jobs with GPU clusters or CPU queues" },
-    { icon: <Gauge className="w-5 h-5" />, title: "Evaluate", desc: "Auto-benchmark accuracy, latency, memory footprint" },
-    { icon: <Rocket className="w-5 h-5" />, title: "Deploy", desc: "Push to any device type in one click with rollback" },
-    { icon: <MonitorDot className="w-5 h-5" />, title: "Monitor", desc: "Live inference metrics, drift detection, auto-retrain triggers" },
-  ];
-
-  const pricing = [
-    {
-      name: "Free", price: activePricing === "annual" ? "$0" : "$0", desc: "For makers and hobbyists",
-      features: ["Up to 10 devices", "3 AI models", "1GB telemetry/mo", "Community support", "REST API access", "Basic analytics"],
-      cta: "Start Free", href: "/register", highlight: false,
-    },
-    {
-      name: "Pro", price: activePricing === "annual" ? "$49" : "$59", desc: "For professional teams",
-      features: ["Up to 1,000 devices", "Unlimited AI models", "100GB telemetry/mo", "Priority support", "Full API + webhooks", "Advanced analytics", "OTA updates", "Team collaboration"],
-      cta: "Start Pro Trial", href: "/register", highlight: true,
-    },
-    {
-      name: "Enterprise", price: "Custom", desc: "For large-scale deployments",
-      features: ["Unlimited devices", "Custom SLA", "Dedicated infra", "24/7 support", "SSO + SAML", "Compliance reports", "On-prem option", "White-label"],
-      cta: "Contact Sales", href: "mailto:sales@aethergrid.ai", highlight: false,
-    },
-  ];
-
-  const testimonials = [
-    { name: "Arjun Mehta", role: "CTO @ IndustrialIQ", text: "Replaced 3 separate tools with AetherGrid. Our edge deployment cycle went from 2 weeks to 4 hours.", avatar: "AM" },
-    { name: "Sarah Chen", role: "ML Engineer @ NeuraTech", text: "The ONNX export and one-click device push is genuinely impressive. We're running 94% accuracy on ESP32.", avatar: "SC" },
-    { name: "Marcus Webb", role: "VP Eng @ SmartCity Labs", text: "Managing 50,000 sensors used to be chaos. AetherGrid's group OTA and live telemetry saved us.", avatar: "MW" },
-    { name: "Priya Nair", role: "IoT Lead @ MedEdge", text: "HIPAA compliance built-in, audit trails automatic. AetherGrid is the only platform we trusted for healthcare.", avatar: "PN" },
-    { name: "Tom Rivera", role: "Founder @ AgriSense", text: "Running TFLite soil models on $4 microcontrollers across 200 farms. ROI in month one.", avatar: "TR" },
-    { name: "Lin Zhang", role: "Staff Eng @ RetailOS", text: "The analytics pipelines and export features saved our data science team 20 hours per week.", avatar: "LZ" },
-  ];
-
-  const integrations = [
-    "MQTT", "gRPC", "WebSocket", "REST API", "Kafka", "NATS",
-    "PostgreSQL", "TimescaleDB", "InfluxDB", "Redis", "S3", "GCS",
-    "TensorFlow", "PyTorch", "ONNX", "Grafana", "Prometheus", "Datadog",
-  ];
-
-  const apiCode = `<span class="text-violet-400">import</span> <span class="text-cyan-300">aethergrid</span> <span class="text-violet-400">from</span> <span class="text-green-300">'@aethergrid/sdk'</span>;
-
-<span class="text-slate-400">// Initialize client</span>
-<span class="text-violet-400">const</span> <span class="text-cyan-300">ag</span> = <span class="text-violet-400">new</span> <span class="text-cyan-300">aethergrid</span>({ apiKey: <span class="text-green-300">'ag_live_xxx'</span> });
-
-<span class="text-slate-400">// Deploy model to device fleet</span>
-<span class="text-violet-400">const</span> <span class="text-cyan-300">deploy</span> = <span class="text-violet-400">await</span> ag.models.deploy({
-  modelId: <span class="text-green-300">'model_yolov8_edge'</span>,
-  targets: { group: <span class="text-green-300">'warehouse-fleet'</span> },
-  strategy: <span class="text-green-300">'canary'</span>,
-  canaryPercent: <span class="text-amber-300">10</span>,
-});
-
-<span class="text-slate-400">// Stream live telemetry</span>
-ag.devices.stream(<span class="text-green-300">'dev_esp32_01'</span>)
-  .on(<span class="text-green-300">'reading'</span>, ({ metric, value }) => {
-    console.log(<span class="text-green-300">\`\${metric}: \${value}\`</span>);
-  });`;
+  const navBg = useTransform(scrollY, [0, 80], ["rgba(5,8,16,0)", "rgba(5,8,16,0.95)"]);
+  const [menuOpen, setMenuOpen]    = useState(false);
+  const [activeCase, setActiveCase] = useState("manufacturing");
+  const heroRef = useRef(null);
 
   return (
-    <div className="min-h-screen bg-[#060a14] text-slate-100 overflow-x-hidden">
-      {/* Animated background */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute inset-0 cyber-grid opacity-25" />
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1200px] h-[600px] bg-cyan-500/4 blur-[160px] rounded-full" />
-        <div className="absolute bottom-1/4 right-0 w-[800px] h-[500px] bg-violet-600/4 blur-[160px] rounded-full" />
-      </div>
+    <div className="min-h-screen bg-[#050810] text-foreground overflow-x-hidden">
 
-      {/* ── Navbar ── */}
-      <motion.nav style={{ backgroundColor: navBg }} className="fixed top-0 inset-x-0 z-50 border-b border-border/20 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 shrink-0">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-violet-600 flex items-center justify-center">
-              <CircuitBoard className="w-3.5 h-3.5 text-white" />
+      {/* ── Sticky Nav ──────────────────────────────────────────────────────── */}
+      <motion.nav style={{ backgroundColor: navBg }}
+        className="fixed top-0 inset-x-0 z-50 border-b border-border/20 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2.5 group">
+            <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center group-hover:border-cyan-500/60 transition-colors">
+              <CircuitBoard className="w-4 h-4 text-cyan-400" />
             </div>
-            <span className="font-black text-base tracking-tight">
-              <span className="gradient-text">Aether</span><span className="text-slate-300">Grid</span>
-              <span className="ml-1.5 text-[9px] font-mono text-cyan-500 border border-cyan-500/40 px-1.5 py-0.5 rounded align-middle">AI</span>
-            </span>
+            <span className="font-bold text-white">AetherGrid <span className="text-cyan-400">AI</span></span>
           </Link>
-          <div className="hidden md:flex items-center gap-7 text-sm text-muted-foreground">
-            {navLinks.map(l => (
-              <Link key={l.label} href={l.href} className="hover:text-cyan-400 transition-colors font-medium">{l.label}</Link>
+
+          {/* Desktop nav */}
+          <nav className="hidden md:flex items-center gap-6 text-sm text-muted-foreground">
+            {[["#features","Features"],["#architecture","Architecture"],["#use-cases","Use Cases"],["#pricing","Pricing"],["#docs","Docs"]].map(([href, label]) => (
+              <a key={href} href={href} className="hover:text-cyan-400 transition-colors">{label}</a>
             ))}
-          </div>
-          <div className="hidden md:flex items-center gap-2.5">
-            <Link href="/login" className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors px-3.5 py-2 rounded-lg hover:bg-muted/30">
+          </nav>
+
+          <div className="flex items-center gap-3">
+            <Link href="/login" className="hidden sm:flex text-sm text-muted-foreground hover:text-white transition-colors px-3 py-1.5">
               Sign In
             </Link>
-            <Link href="/register" className="text-xs font-semibold bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-400 hover:to-violet-500 text-white px-4 py-2 rounded-lg transition-all shadow-[0_0_15px_rgba(0,212,255,0.25)]">
-              Get Started Free →
+            <Link href="/register"
+              className="px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-cyan-500 to-violet-500 text-white hover:opacity-90 transition-all shadow-lg shadow-cyan-500/20">
+              Get Started Free
             </Link>
+            <button onClick={() => setMenuOpen(!menuOpen)} className="md:hidden p-2 text-muted-foreground">
+              {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
           </div>
-          <button className="md:hidden p-2 rounded-lg hover:bg-muted/30" onClick={() => setMenuOpen(!menuOpen)}>
-            {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
         </div>
+
+        {/* Mobile menu */}
         <AnimatePresence>
           {menuOpen && (
             <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-              className="md:hidden bg-[#060a14] border-t border-border/20 px-4 py-5 space-y-1">
-              {navLinks.map(l => (
-                <Link key={l.label} href={l.href} className="block text-sm text-muted-foreground hover:text-cyan-400 py-2.5 px-3 rounded-lg hover:bg-muted/20 transition-all" onClick={() => setMenuOpen(false)}>
-                  {l.label}
-                </Link>
+              className="md:hidden border-t border-border/30 bg-[#050810]/98 px-4 py-4 flex flex-col gap-3">
+              {[["#features","Features"],["#architecture","Architecture"],["#use-cases","Use Cases"],["#pricing","Pricing"]].map(([href, label]) => (
+                <a key={href} href={href} onClick={() => setMenuOpen(false)} className="text-sm text-muted-foreground hover:text-cyan-400 py-2 border-b border-border/20 transition-colors">{label}</a>
               ))}
-              <div className="pt-3 grid grid-cols-2 gap-2">
-                <Link href="/login" className="text-center py-2.5 border border-border/60 rounded-lg text-sm font-medium" onClick={() => setMenuOpen(false)}>Sign In</Link>
-                <Link href="/register" className="text-center py-2.5 bg-gradient-to-r from-cyan-500 to-violet-600 rounded-lg text-sm font-semibold text-white" onClick={() => setMenuOpen(false)}>Get Started</Link>
-              </div>
+              <Link href="/login" className="text-sm text-muted-foreground py-2">Sign In</Link>
+              <Link href="/register" className="text-sm font-semibold text-cyan-400 py-2">Create Free Account →</Link>
             </motion.div>
           )}
         </AnimatePresence>
       </motion.nav>
 
-      {/* ── Hero ── */}
-      <section className="relative pt-24 pb-16 px-4 min-h-[92vh] flex flex-col justify-center overflow-hidden">
-        <NetworkCanvas />
-        <div className="max-w-7xl mx-auto relative z-10">
-          <div className="max-w-4xl mx-auto text-center">
-            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-              <span className="inline-flex items-center gap-2 text-xs font-mono text-cyan-400 border border-cyan-400/30 bg-cyan-400/5 px-4 py-1.5 rounded-full mb-8">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                Now in public beta · 10,000+ developers worldwide
+      {/* ── Hero ──────────────────────────────────────────────────────────────── */}
+      <section ref={heroRef} className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden pt-16">
+        {/* Real-time network canvas */}
+        <div className="absolute inset-0 z-0">
+          <NetworkCanvas />
+        </div>
+
+        {/* Radial gradient vignette */}
+        <div className="absolute inset-0 bg-radial-[ellipse_at_center] from-transparent via-[#050810]/40 to-[#050810] pointer-events-none z-[1]" />
+        <div className="absolute bottom-0 inset-x-0 h-40 bg-gradient-to-t from-[#050810] to-transparent z-[2]" />
+
+        <div className="relative z-10 text-center max-w-5xl mx-auto px-4">
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/5 text-cyan-400 text-xs font-semibold mb-6">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+            42,819 devices online right now
+          </motion.div>
+
+          <motion.h1 initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.1 }}
+            className="text-5xl sm:text-6xl lg:text-7xl font-bold leading-tight tracking-tight mb-6">
+            <span className="text-white">The Edge AI Platform</span>
+            <br />
+            <span className="bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400 bg-clip-text text-transparent">
+              for Every Device
+            </span>
+          </motion.h1>
+
+          <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 }}
+            className="text-lg text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed">
+            Deploy AI models from <span className="text-cyan-400 font-semibold">$3 ESP32 microcontrollers</span> to{" "}
+            <span className="text-violet-400 font-semibold">NVIDIA GPU clusters</span>. Manage billions of IoT devices,
+            stream real-time telemetry, and automate your entire edge fleet — all from one platform.
+          </motion.p>
+
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.3 }}
+            className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Link href="/register"
+              className="group flex items-center gap-2 px-8 py-4 rounded-xl font-bold text-base bg-gradient-to-r from-cyan-500 to-violet-500 text-white hover:opacity-90 transition-all shadow-2xl shadow-cyan-500/30 hover:shadow-cyan-500/50 hover:-translate-y-0.5">
+              Start for Free
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </Link>
+            <Link href="/login?demo=1"
+              onClick={e => { e.preventDefault(); window.location.href = "/login"; }}
+              className="flex items-center gap-2 px-8 py-4 rounded-xl font-bold text-base border border-border/60 text-white hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all">
+              <Zap className="w-4 h-4 text-cyan-400" />
+              Live Demo
+            </Link>
+          </motion.div>
+
+          {/* Trust chips */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1, delay: 0.6 }}
+            className="flex flex-wrap justify-center gap-3 mt-8">
+            {["No credit card","Free forever tier","Full API access","GDPR compliant"].map(t => (
+              <span key={t} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />{t}
               </span>
-            </motion.div>
-
-            <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1 }}
-              className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tighter leading-[0.92] mb-7">
-              <span className="text-white">The Edge AI Platform</span>
-              <br />
-              <span className="gradient-text">for Every Device on Earth</span>
-            </motion.h1>
-
-            <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2 }}
-              className="text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed">
-              Deploy, monitor, and scale AI models from <span className="text-cyan-400 font-mono">$3 ESP32 microcontrollers</span> to <span className="text-violet-400 font-mono">NVIDIA GPU clusters</span>. One unified platform for the entire edge AI lifecycle.
-            </motion.p>
-
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.3 }}
-              className="flex flex-col sm:flex-row items-center justify-center gap-3.5 mb-10">
-              <Link href="/register" className="group flex items-center gap-2.5 bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-400 hover:to-violet-500 text-white px-7 py-3.5 rounded-xl font-bold text-sm transition-all shadow-[0_0_30px_rgba(0,212,255,0.3)] hover:shadow-[0_0_50px_rgba(0,212,255,0.5)]">
-                <Rocket className="w-4 h-4" />
-                Start for Free
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </Link>
-              <Link href="/dashboard" className="flex items-center gap-2.5 border border-border/60 hover:border-cyan-400/40 text-muted-foreground hover:text-white px-7 py-3.5 rounded-xl font-semibold text-sm transition-all backdrop-blur-sm hover:bg-white/5">
-                <PlayCircle className="w-4 h-4" />
-                Live Demo
-              </Link>
-              <Link href="/docs" className="flex items-center gap-2.5 text-muted-foreground hover:text-cyan-400 px-4 py-3.5 rounded-xl font-medium text-sm transition-all">
-                <BookOpen className="w-4 h-4" />
-                Docs
-              </Link>
-            </motion.div>
-
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1, delay: 0.5 }}
-              className="flex items-center justify-center gap-5 text-xs text-muted-foreground flex-wrap">
-              {["No credit card", "Free tier forever", "Deploy in 5 minutes", "Open API"].map((t, i) => (
-                <span key={i} className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-green-400" /> {t}</span>
-              ))}
-            </motion.div>
-          </div>
-
-          {/* Dashboard Preview */}
-          <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.5 }}
-            className="max-w-5xl mx-auto mt-16 relative">
-            <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500/20 via-violet-600/20 to-cyan-500/20 blur-xl rounded-3xl opacity-60" />
-            <div className="relative rounded-2xl border border-border/40 bg-[#080c16]/80 backdrop-blur overflow-hidden shadow-[0_0_80px_rgba(0,212,255,0.08)]">
-              {/* Window chrome */}
-              <div className="flex items-center gap-2 px-5 py-3 border-b border-border/30 bg-muted/10">
-                <div className="flex gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-full bg-red-500/70" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/70" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-green-500/70" />
-                </div>
-                <div className="flex-1 flex justify-center">
-                  <div className="bg-muted/40 text-[10px] text-muted-foreground px-4 py-1 rounded-full font-mono">
-                    app.aethergrid.ai/dashboard
-                  </div>
-                </div>
-                <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              </div>
-              {/* Stats grid */}
-              <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-3">
-                {[
-                  { label: "Active Devices", value: "2,847", change: "+12.3%", color: "cyan", icon: <Cpu className="w-4 h-4" /> },
-                  { label: "AI Models Live", value: "34", change: "+3 today", color: "violet", icon: <Brain className="w-4 h-4" /> },
-                  { label: "Data / sec", value: "1.2 TB", change: "↑ 5.1%", color: "emerald", icon: <Activity className="w-4 h-4" /> },
-                  { label: "Uptime", value: "99.99%", change: "30-day avg", color: "sky", icon: <Shield className="w-4 h-4" /> },
-                ].map((s, i) => (
-                  <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 + i * 0.08 }}
-                    className="glass rounded-xl p-3.5">
-                    <div className={`text-${s.color}-400 mb-2.5`}>{s.icon}</div>
-                    <div className="text-xl font-black text-white mb-0.5">{s.value}</div>
-                    <div className="text-[11px] text-muted-foreground">{s.label}</div>
-                    <div className="text-[10px] text-green-400 mt-1 font-mono">{s.change}</div>
-                  </motion.div>
-                ))}
-              </div>
-              {/* Chart area */}
-              <div className="px-5 pb-5 grid grid-cols-3 gap-3">
-                <div className="col-span-2 glass rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-semibold text-muted-foreground">Device Telemetry — Last 24h</span>
-                    <span className="text-[10px] text-green-400 font-mono">LIVE</span>
-                  </div>
-                  <div className="flex items-end gap-0.5 h-14">
-                    {[40,55,48,62,78,65,82,90,74,88,95,91,85,79,88,93,87,92,85,90,88,94,91,96].map((h, i) => (
-                      <div key={i} className="flex-1 rounded-sm bg-gradient-to-t from-cyan-500 to-cyan-300/80 opacity-80"
-                        style={{ height: `${h}%` }} />
-                    ))}
-                  </div>
-                </div>
-                <div className="glass rounded-xl p-4">
-                  <div className="text-xs font-semibold text-muted-foreground mb-3">Status</div>
-                  <div className="space-y-2.5">
-                    {[{ l: "Online", v: 78, c: "bg-green-400" }, { l: "Offline", v: 15, c: "bg-slate-500" }, { l: "Warning", v: 7, c: "bg-amber-400" }].map((d, i) => (
-                      <div key={i}>
-                        <div className="flex justify-between text-[10px] mb-1">
-                          <span className="text-muted-foreground">{d.l}</span>
-                          <span className="text-white font-mono">{d.v}%</span>
-                        </div>
-                        <div className="h-1 bg-muted rounded-full">
-                          <div className={`h-full ${d.c} rounded-full transition-all duration-1000`} style={{ width: `${d.v}%` }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
+            ))}
           </motion.div>
         </div>
-        {/* Scroll indicator */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 text-muted-foreground/50 animate-bounce">
-          <span className="text-[10px] font-mono">SCROLL</span>
-          <ChevronDown className="w-4 h-4" />
+
+        {/* Hero floating metrics */}
+        <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.5 }}
+          className="relative z-10 mt-16 w-full max-w-4xl mx-auto px-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {STATS.map((s, i) => (
+              <motion.div key={s.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 + i * 0.08 }}
+                className="bg-card/60 backdrop-blur-md border border-border/50 rounded-xl p-4 text-center hover:border-cyan-500/30 transition-all">
+                <s.icon className="w-4 h-4 text-cyan-400 mx-auto mb-2" />
+                <div className="text-xl font-bold text-white">
+                  <Counter to={typeof s.value === "number" ? Math.min(s.value, 9999999) : 0}
+                    suffix={s.suffix} />
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">{s.label}</div>
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
+
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10 animate-bounce">
+          <ChevronDown className="w-5 h-5 text-muted-foreground" />
         </div>
       </section>
 
-      {/* ── Live Ticker ── */}
-      <LiveTicker />
+      {/* ── Live Ticker ──────────────────────────────────────────────────────── */}
+      <div className="border-y border-border/30 bg-muted/20 py-2.5 overflow-hidden">
+        <div className="flex animate-ticker whitespace-nowrap">
+          {[...TICKER_ITEMS, ...TICKER_ITEMS, ...TICKER_ITEMS].map((item, i) => (
+            <span key={i} className="inline-flex items-center gap-2 px-8 text-xs text-muted-foreground">
+              <span className="w-1 h-1 rounded-full bg-cyan-400" />{item}
+            </span>
+          ))}
+        </div>
+      </div>
 
-      {/* ── Stats ── */}
-      <section className="py-20 px-4">
-        <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8">
-          {[
-            { val: 1000000000, suf: "B+", label: "Devices Supported", pre: "" },
-            { val: 50, suf: "+", label: "ML Frameworks", pre: "" },
-            { val: 128, suf: "+", label: "Global Regions", pre: "" },
-            { val: 9999, suf: "%", label: "Uptime SLA", pre: "99." },
-          ].map((s, i) => (
-            <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
-              className="text-center">
-              <div className="text-3xl sm:text-4xl font-black gradient-text mb-1">
-                {s.pre}<Counter to={s.pre === "99." ? 99 : s.val} suffix={s.suf} />
+      {/* ── Features Grid ────────────────────────────────────────────────────── */}
+      <section id="features" className="py-24 max-w-7xl mx-auto px-4 sm:px-6">
+        <Section className="text-center mb-16">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-violet-500/30 bg-violet-500/5 text-violet-400 text-xs font-semibold mb-4">
+            <Layers className="w-3 h-3" /> Platform Capabilities
+          </div>
+          <h2 className="text-4xl font-bold text-white mb-4">Everything your edge stack needs</h2>
+          <p className="text-muted-foreground max-w-xl mx-auto">12 integrated modules. Zero vendor lock-in. One unified control plane for your entire edge AI lifecycle.</p>
+        </Section>
+
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {FEATURES.map((f, i) => (
+            <motion.div key={f.title} initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }} transition={{ delay: i * 0.06 }}
+              className="group bg-card/50 border border-border/50 rounded-xl p-6 hover:border-border hover:bg-card/80 hover:-translate-y-1 transition-all duration-300">
+              <div className={`inline-flex p-2.5 rounded-lg border mb-4 ${colorMap[f.color]}`}>
+                <f.icon className="w-4 h-4" />
               </div>
-              <div className="text-sm text-muted-foreground">{s.label}</div>
+              <h3 className="font-bold text-white mb-2 text-sm">{f.title}</h3>
+              <p className="text-muted-foreground text-xs leading-relaxed">{f.desc}</p>
             </motion.div>
           ))}
         </div>
       </section>
 
-      {/* ── Features ── */}
-      <section id="features" className="py-24 px-4">
-        <div className="max-w-7xl mx-auto">
-          <SectionHeader
-            tag="⚡ PLATFORM CAPABILITIES"
-            title={<>Everything you need for<br /><span className="gradient-text">production edge AI</span></>}
-            sub="A unified control plane for hardware, models, data, and automation — from prototype to planet-scale."
-          />
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {features.map((f, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.04 }}
-                className="glass rounded-2xl p-5 hover:border-cyan-400/30 transition-all group cursor-default glow-border">
-                <div className={`w-9 h-9 rounded-xl bg-${f.color}-500/15 flex items-center justify-center text-${f.color}-400 mb-4 group-hover:scale-110 transition-transform`}>
-                  {f.icon}
-                </div>
-                <h3 className="font-bold text-sm text-white mb-2">{f.title}</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">{f.desc}</p>
-              </motion.div>
+      {/* ── Architecture Diagram ─────────────────────────────────────────────── */}
+      <section id="architecture" className="py-24 border-y border-border/30 bg-muted/10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <Section className="text-center mb-16">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-cyan-500/30 bg-cyan-500/5 text-cyan-400 text-xs font-semibold mb-4">
+              <Server className="w-3 h-3" /> System Architecture
+            </div>
+            <h2 className="text-4xl font-bold text-white mb-4">How AetherGrid works</h2>
+            <p className="text-muted-foreground max-w-xl mx-auto">A three-tier architecture designed for latency-critical deployments at any scale.</p>
+          </Section>
+
+          <div className="grid md:grid-cols-3 gap-8">
+            {[
+              { tier: "01", label: "Edge Devices", color: "cyan", items: ["ESP32 / ESP8266","NVIDIA Jetson","Raspberry Pi 4/5","STM32 / RISC-V","Custom hardware"], icon: CpuIcon, desc: "Your physical devices run the AetherGrid Edge Agent — a 40KB binary that handles telemetry, OTA, and local inference." },
+              { tier: "02", label: "AetherGrid Core", color: "violet", items: ["MQTT / WebSocket broker","Time-series ingestion","Model registry","OTA orchestration","Rule engine"], icon: Server, desc: "The stateless cloud control plane — auto-scaled across Vercel Edge, processing 12.4B inference requests per day." },
+              { tier: "03", label: "Your Applications", color: "green", items: ["REST + WebSocket API","Python / Node SDKs","Grafana connector","Webhook push","Export center"], icon: GitBranch, desc: "Consume real-time data and control your fleet via our typed SDKs or any HTTP client. Full OpenAPI 3.1 spec included." },
+            ].map((t, i) => (
+              <Section key={t.tier}>
+                <motion.div whileHover={{ scale: 1.02 }} className="bg-card/50 border border-border/50 rounded-2xl p-6 h-full hover:border-border transition-all">
+                  <div className={`text-5xl font-black mb-4 ${t.color === "cyan" ? "text-cyan-500/20" : t.color === "violet" ? "text-violet-500/20" : "text-emerald-500/20"}`}>
+                    {t.tier}
+                  </div>
+                  <div className={`inline-flex p-2 rounded-lg border mb-3 ${colorMap[t.color]}`}>
+                    <t.icon className="w-4 h-4" />
+                  </div>
+                  <h3 className="font-bold text-white text-lg mb-2">{t.label}</h3>
+                  <p className="text-muted-foreground text-xs leading-relaxed mb-4">{t.desc}</p>
+                  <ul className="space-y-1.5">
+                    {t.items.map(item => (
+                      <li key={item} className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${t.color === "cyan" ? "text-cyan-400" : t.color === "violet" ? "text-violet-400" : "text-emerald-400"}`} />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </motion.div>
+              </Section>
             ))}
           </div>
-        </div>
-      </section>
 
-      {/* ── Architecture ── */}
-      <section id="architecture" className="py-24 px-4 bg-gradient-to-b from-transparent via-cyan-950/10 to-transparent">
-        <div className="max-w-6xl mx-auto">
-          <SectionHeader
-            tag="🏗️ ARCHITECTURE"
-            title={<>Full-stack edge AI<br /><span className="gradient-text">from silicon to cloud</span></>}
-            sub="A layered architecture designed for reliability, security, and infinite scale."
-          />
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-            {/* Architecture diagram */}
-            <div className="space-y-2">
-              {[
-                { label: "DEVICE LAYER", items: ["ESP32", "Jetson", "RPi", "STM32"], color: "cyan", icon: <Cpu className="w-3.5 h-3.5" /> },
-                { label: "CONNECTIVITY LAYER", items: ["MQTT", "gRPC", "WebSocket", "HTTP/2"], color: "violet", icon: <Radio className="w-3.5 h-3.5" /> },
-                { label: "EDGE GATEWAY", items: ["OTA Manager", "Security Hub", "Data Broker"], color: "emerald", icon: <Network className="w-3.5 h-3.5" /> },
-                { label: "PLATFORM CORE", items: ["AetherGrid API", "ML Registry", "Analytics"], color: "amber", icon: <Brain className="w-3.5 h-3.5" /> },
-                { label: "CLOUD & STORAGE", items: ["Neon PG", "S3/GCS", "Vercel Edge"], color: "sky", icon: <Cloud className="w-3.5 h-3.5" /> },
-              ].map((layer, i) => (
-                <motion.div key={i} initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
-                  className={`flex items-center gap-4 p-4 rounded-xl border border-${layer.color}-500/20 bg-${layer.color}-500/5`}>
-                  <div className={`w-8 h-8 rounded-lg bg-${layer.color}-500/20 flex items-center justify-center text-${layer.color}-400 shrink-0`}>
-                    {layer.icon}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-[10px] font-mono text-${layer.color}-400 mb-1`}>{layer.label}</div>
-                    <div className="flex gap-2 flex-wrap">
-                      {layer.items.map((item, j) => (
-                        <span key={j} className="text-xs text-slate-300 bg-white/5 px-2 py-0.5 rounded font-mono">{item}</span>
-                      ))}
-                    </div>
-                  </div>
-                  {i < 4 && <div className={`w-px h-full border-l border-dashed border-${layer.color}-500/30`} />}
-                </motion.div>
-              ))}
-            </div>
-            {/* ML Frameworks */}
-            <div className="space-y-6">
-              <h3 className="text-xl font-black text-white">Supported ML Frameworks</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {mlFrameworks.map((f, i) => (
-                  <motion.div key={i} initial={{ opacity: 0, scale: 0.95 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ delay: i * 0.08 }}
-                    className="glass rounded-xl p-4 flex items-center justify-between">
-                    <span className="font-semibold text-sm text-white">{f.name}</span>
-                    <span className={`text-[10px] font-mono text-${f.color}-400 border border-${f.color}-400/30 px-2 py-0.5 rounded-full`}>{f.badge}</span>
-                  </motion.div>
-                ))}
-              </div>
-              <div className="glass rounded-xl p-5">
-                <div className="text-xs text-muted-foreground mb-3 font-mono">MODEL INFERENCE BENCHMARK (ESP32)</div>
-                {[{ name: "TFLite INT8", ms: 28, pct: 100 }, { name: "ONNX Runtime", ms: 45, pct: 62 }, { name: "Custom C++ Runtime", ms: 12, pct: 42 }].map((b, i) => (
-                  <div key={i} className="mb-3 last:mb-0">
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="text-slate-300">{b.name}</span>
-                      <span className="font-mono text-cyan-400">{b.ms}ms</span>
-                    </div>
-                    <div className="h-1.5 bg-muted rounded-full">
-                      <motion.div initial={{ width: 0 }} whileInView={{ width: `${b.pct}%` }} viewport={{ once: true }} transition={{ delay: 0.3 + i * 0.1, duration: 0.8 }}
-                        className="h-full bg-gradient-to-r from-cyan-500 to-violet-600 rounded-full" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Hardware Support ── */}
-      <section className="py-24 px-4">
-        <div className="max-w-6xl mx-auto">
-          <SectionHeader
-            tag="🔌 HARDWARE"
-            title={<>From <span className="gradient-text">$3 microcontrollers</span><br />to GPU clusters</>}
-            sub="Native SDK support for every major embedded and edge computing platform."
-          />
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {hardwareItems.map((h, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.06 }}
-                className="glass rounded-2xl p-5 text-center hover:border-cyan-400/30 transition-all glow-border group">
-                <div className="text-3xl mb-3">{h.icon}</div>
-                <div className="font-bold text-sm text-white mb-1">{h.name}</div>
-                <div className="text-[11px] text-muted-foreground mb-1">{h.spec}</div>
-                <div className="text-[10px] font-mono text-cyan-400">{h.power}</div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── ML Pipeline ── */}
-      <section className="py-24 px-4 bg-gradient-to-b from-transparent via-violet-950/10 to-transparent">
-        <div className="max-w-5xl mx-auto">
-          <SectionHeader
-            tag="🧠 ML LIFECYCLE"
-            title={<>Full MLOps pipeline,<br /><span className="gradient-text">built for edge</span></>}
-            sub="Every stage from raw data ingestion to live edge inference — automated, monitored, and reproducible."
-          />
-          <div className="relative">
-            <div className="absolute top-10 left-4 right-4 h-px bg-gradient-to-r from-transparent via-cyan-500/30 to-transparent hidden lg:block" />
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-              {pipelineSteps.map((s, i) => (
-                <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
-                  className="relative flex flex-col items-center text-center">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-violet-600/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-4 z-10">
-                    {s.icon}
-                  </div>
-                  <div className="text-[10px] font-mono text-cyan-400 mb-1.5">0{i + 1}</div>
-                  <div className="font-bold text-sm text-white mb-1.5">{s.title}</div>
-                  <div className="text-[11px] text-muted-foreground leading-relaxed">{s.desc}</div>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── API Quick Start ── */}
-      <section className="py-24 px-4">
-        <div className="max-w-5xl mx-auto">
-          <SectionHeader
-            tag="⌨️ DEVELOPER FIRST"
-            title={<>Deploy in <span className="gradient-text">minutes</span>,<br />not months</>}
-            sub="Intuitive SDK with full TypeScript types. REST, WebSocket, and GraphQL APIs."
-          />
-          <div className="grid lg:grid-cols-2 gap-8 items-start">
-            <div className="space-y-5">
-              <div className="space-y-3">
+          {/* Connection lines diagram */}
+          <Section className="mt-12">
+            <div className="bg-card/30 border border-border/40 rounded-2xl p-6 overflow-x-auto">
+              <div className="flex items-center justify-center gap-4 min-w-max mx-auto text-xs">
                 {[
-                  { n: "1", t: "Install SDK", c: "npm install @aethergrid/sdk" },
-                  { n: "2", t: "Init client", c: 'const ag = new AetherGrid({ apiKey: "ag_live_..." })' },
-                  { n: "3", t: "Deploy model", c: "await ag.models.deploy({ modelId, targets })" },
-                  { n: "4", t: "Stream telemetry", c: 'ag.devices.stream("dev_01").on("reading", cb)' },
-                ].map((step, i) => (
-                  <div key={i} className="flex items-start gap-4">
-                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-cyan-500/30 to-violet-600/30 border border-cyan-500/40 flex items-center justify-center text-[10px] font-mono text-cyan-400 shrink-0 mt-0.5">{step.n}</div>
-                    <div>
-                      <div className="text-xs font-semibold text-white mb-1">{step.t}</div>
-                      <code className="text-[11px] font-mono text-cyan-400/80 bg-cyan-400/5 border border-cyan-400/20 px-2.5 py-1 rounded block">{step.c}</code>
-                    </div>
+                  { label: "ESP32 Fleet", color: "cyan"   },
+                  { label: "MQTT Broker", color: "violet" },
+                  { label: "Model Registry", color: "violet" },
+                  { label: "REST API", color: "violet" },
+                  { label: "Your App", color: "green" },
+                ].map((n, i, arr) => (
+                  <div key={n.label} className="flex items-center gap-4">
+                    <div className={`px-4 py-2 rounded-lg border font-semibold ${colorMap[n.color]}`}>{n.label}</div>
+                    {i < arr.length - 1 && (
+                      <div className="flex flex-col items-center gap-0.5">
+                        <div className="w-12 h-px bg-gradient-to-r from-cyan-500/30 to-violet-500/30" />
+                        <span className="text-[9px] text-muted-foreground">TLS 1.3</span>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
-              <div className="flex gap-3 flex-wrap">
-                <Link href="/docs" className="flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 transition-colors">
-                  <BookOpen className="w-3.5 h-3.5" /> Full Documentation
-                </Link>
-                <Link href="/register" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-white transition-colors">
-                  <Key className="w-3.5 h-3.5" /> Get API Key
-                </Link>
-              </div>
             </div>
-            <CodeBlock code={apiCode} lang="TypeScript — aethergrid-sdk" />
-          </div>
+          </Section>
         </div>
       </section>
 
-      {/* ── Use Cases ── */}
-      <section id="use-cases" className="py-24 px-4 bg-gradient-to-b from-transparent via-cyan-950/8 to-transparent">
-        <div className="max-w-5xl mx-auto">
-          <SectionHeader
-            tag="🌍 USE CASES"
-            title={<>Built for every <span className="gradient-text">vertical</span></>}
-            sub="Real deployments across manufacturing, smart cities, healthcare, retail, and beyond."
-          />
-          <div className="flex gap-2 flex-wrap justify-center mb-10">
-            {Object.entries(useCases).map(([key, uc]) => (
-              <button key={key} onClick={() => setActiveTab(key)}
-                className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${activeTab === key ? "bg-gradient-to-r from-cyan-500 to-violet-600 text-white shadow-[0_0_20px_rgba(0,212,255,0.3)]" : "border border-border/60 text-muted-foreground hover:text-white hover:border-cyan-400/30"}`}>
-                {uc.title}
+      {/* ── API Code Block ────────────────────────────────────────────────────── */}
+      <section className="py-24 max-w-7xl mx-auto px-4 sm:px-6">
+        <div className="grid md:grid-cols-2 gap-12 items-center">
+          <Section>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-yellow-500/30 bg-yellow-500/5 text-yellow-400 text-xs font-semibold mb-4">
+              <Code className="w-3 h-3" /> Developer-First API
+            </div>
+            <h2 className="text-4xl font-bold text-white mb-4">Ship edge AI in minutes, not months</h2>
+            <p className="text-muted-foreground mb-6 leading-relaxed text-sm">One API to manage devices, deploy models, stream telemetry and trigger automations. Full typed SDKs for Python, Node.js and Rust.</p>
+            <div className="space-y-3">
+              {[
+                { label: "Python SDK",    ver: "pip install aethergrid" },
+                { label: "Node.js SDK",   ver: "npm i @aethergrid/sdk" },
+                { label: "REST API",      ver: "api.aethergrid.ai/v1" },
+                { label: "WebSocket",     ver: "wss://live.aethergrid.ai" },
+              ].map(s => (
+                <div key={s.label} className="flex items-center gap-3 text-xs">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="text-muted-foreground w-24">{s.label}</span>
+                  <code className="text-cyan-400 font-mono">{s.ver}</code>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 mt-8">
+              <Link href="/docs" className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-border/60 text-sm text-white hover:border-cyan-500/40 transition-all">
+                <BookOpen className="w-4 h-4" /> Read Docs
+              </Link>
+              <Link href="/register" className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gradient-to-r from-cyan-500 to-violet-500 text-white text-sm font-semibold hover:opacity-90 transition-all">
+                Get API Key <Key className="w-4 h-4" />
+              </Link>
+            </div>
+          </Section>
+
+          <Section>
+            <div className="bg-[#0a0e1a] border border-border/50 rounded-xl overflow-hidden shadow-2xl">
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-border/40">
+                <div className="flex gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-red-500/60" />
+                  <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
+                  <div className="w-3 h-3 rounded-full bg-green-500/60" />
+                </div>
+                <span className="text-xs text-muted-foreground ml-2 font-mono">aethergrid_quickstart.py</span>
+              </div>
+              <pre className="p-4 text-[11px] text-emerald-300/90 font-mono overflow-x-auto leading-relaxed">
+                <code>{API_SNIPPET}</code>
+              </pre>
+            </div>
+          </Section>
+        </div>
+      </section>
+
+      {/* ── Use Cases ─────────────────────────────────────────────────────────── */}
+      <section id="use-cases" className="py-24 border-y border-border/30 bg-muted/10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <Section className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/5 text-emerald-400 text-xs font-semibold mb-4">
+              <BrainCircuit className="w-3 h-3" /> Industry Solutions
+            </div>
+            <h2 className="text-4xl font-bold text-white mb-4">Built for the real world</h2>
+          </Section>
+
+          <div className="flex gap-2 flex-wrap justify-center mb-8">
+            {USE_CASES.map(u => (
+              <button key={u.id} onClick={() => setActiveCase(u.id)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${activeCase === u.id ? `${colorMap[u.color]} border` : "text-muted-foreground hover:text-white border border-border/40"}`}>
+                <u.icon className="w-3.5 h-3.5" />{u.label}
               </button>
             ))}
           </div>
+
           <AnimatePresence mode="wait">
-            <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}
-              className="glass rounded-2xl p-8">
-              <div className="grid md:grid-cols-2 gap-10 items-center">
-                <div>
-                  <div className="flex gap-2 mb-6 flex-wrap">
-                    {useCases[activeTab as keyof typeof useCases].kpis.map((kpi, i) => (
-                      <span key={i} className="text-xs font-mono text-green-400 border border-green-400/30 bg-green-400/5 px-3 py-1.5 rounded-full">{kpi}</span>
-                    ))}
-                  </div>
-                  <div className="space-y-4">
-                    {useCases[activeTab as keyof typeof useCases].steps.map((step, i) => (
-                      <div key={i} className="flex items-start gap-3.5">
-                        <div className="w-7 h-7 rounded-lg bg-cyan-500/15 flex items-center justify-center text-cyan-400 shrink-0 mt-0.5">{step.icon}</div>
-                        <p className="text-sm text-slate-300 leading-relaxed">{step.text}</p>
-                      </div>
-                    ))}
-                  </div>
+            {USE_CASES.filter(u => u.id === activeCase).map(u => (
+              <motion.div key={u.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
+                className={`bg-card/50 border rounded-2xl p-8 max-w-2xl mx-auto text-center ${colorMap[u.color]}`}>
+                <div className={`inline-flex p-3 rounded-xl border mb-4 ${colorMap[u.color]}`}>
+                  <u.icon className="w-6 h-6" />
                 </div>
-                <div className="space-y-4">
-                  <div className="glass rounded-xl p-5">
-                    <div className="text-xs font-mono text-muted-foreground mb-3">LIVE DEVICE METRICS</div>
-                    {[{ label: "Inference/sec", val: "1,240", unit: "ops", color: "cyan" }, { label: "Avg latency", val: "8.4", unit: "ms", color: "violet" }, { label: "Model accuracy", val: "94.2", unit: "%", color: "green" }].map((m, i) => (
-                      <div key={i} className="flex items-center justify-between py-2.5 border-b border-border/30 last:border-0">
-                        <span className="text-xs text-muted-foreground">{m.label}</span>
-                        <span className={`text-sm font-black text-${m.color}-400 font-mono`}>{m.val}<span className="text-[10px] text-muted-foreground ml-1">{m.unit}</span></span>
-                      </div>
-                    ))}
-                  </div>
-                  <Link href="/register" className="flex items-center justify-center gap-2 w-full bg-gradient-to-r from-cyan-500/20 to-violet-600/20 hover:from-cyan-500/30 hover:to-violet-600/30 border border-cyan-500/30 text-cyan-400 py-3 rounded-xl text-sm font-semibold transition-all">
-                    See full case study <ExternalLink className="w-3.5 h-3.5" />
-                  </Link>
-                </div>
-              </div>
-            </motion.div>
+                <h3 className="text-xl font-bold text-white mb-3">{u.label}</h3>
+                <p className="text-muted-foreground leading-relaxed">{u.desc}</p>
+              </motion.div>
+            ))}
           </AnimatePresence>
         </div>
       </section>
 
-      {/* ── Integrations ── */}
-      <section className="py-24 px-4">
-        <div className="max-w-5xl mx-auto">
-          <SectionHeader
-            tag="🔗 INTEGRATIONS"
-            title={<>Connects to your<br /><span className="gradient-text">entire stack</span></>}
-            sub="Plug in to every protocol, database, and observability tool you already use."
-          />
-          <div className="flex flex-wrap gap-3 justify-center">
-            {integrations.map((name, i) => (
-              <motion.span key={i} initial={{ opacity: 0, scale: 0.9 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ delay: i * 0.03 }}
-                className="text-xs font-mono text-muted-foreground border border-border/50 bg-muted/20 hover:border-cyan-400/40 hover:text-cyan-400 px-4 py-2 rounded-lg transition-all cursor-default">
-                {name}
-              </motion.span>
-            ))}
+      {/* ── Pricing ───────────────────────────────────────────────────────────── */}
+      <section id="pricing" className="py-24 max-w-7xl mx-auto px-4 sm:px-6">
+        <Section className="text-center mb-16">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-pink-500/30 bg-pink-500/5 text-pink-400 text-xs font-semibold mb-4">
+            <Gauge className="w-3 h-3" /> Pricing
           </div>
-        </div>
-      </section>
+          <h2 className="text-4xl font-bold text-white mb-4">Simple, transparent pricing</h2>
+          <p className="text-muted-foreground">Start free. Scale to millions of devices with no hidden fees.</p>
+        </Section>
 
-      {/* ── Pricing ── */}
-      <section id="pricing" className="py-24 px-4 bg-gradient-to-b from-transparent via-violet-950/8 to-transparent">
-        <div className="max-w-5xl mx-auto">
-          <SectionHeader
-            tag="💳 PRICING"
-            title={<>Simple, transparent<br /><span className="gradient-text">pricing</span></>}
-            sub="Start free, scale when youyou're readyapos;re ready. No hidden fees, no vendor lock-in."
-          />
-          <div className="flex justify-center gap-2 mb-10">
-            {(["monthly", "annual"] as const).map((p) => (
-              <button key={p} onClick={() => setActivePricing(p)}
-                className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all ${activePricing === p ? "bg-gradient-to-r from-cyan-500 to-violet-600 text-white" : "border border-border/60 text-muted-foreground"}`}>
-                {p === "monthly" ? "Monthly" : "Annual (save 20%)"}
-              </button>
-            ))}
-          </div>
-          <div className="grid md:grid-cols-3 gap-5">
-            {pricing.map((plan, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
-                className={`relative rounded-2xl p-7 ${plan.highlight ? "bg-gradient-to-b from-cyan-500/10 to-violet-600/10 border border-cyan-500/40 shadow-[0_0_40px_rgba(0,212,255,0.12)]" : "glass"}`}>
-                {plan.highlight && (
-                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-[10px] font-mono font-bold text-white bg-gradient-to-r from-cyan-500 to-violet-600 px-4 py-1 rounded-full">
-                    MOST POPULAR
-                  </div>
-                )}
-                <div className="mb-6">
-                  <div className="text-sm font-bold text-muted-foreground mb-1">{plan.name}</div>
-                  <div className="text-4xl font-black text-white mb-1">{plan.price}<span className="text-base font-normal text-muted-foreground">{plan.price !== "Custom" ? "/mo" : ""}</span></div>
-                  <div className="text-xs text-muted-foreground">{plan.desc}</div>
+        <div className="grid md:grid-cols-3 gap-6">
+          {PRICING.map((p, i) => (
+            <motion.div key={p.name} initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }} transition={{ delay: i * 0.1 }}
+              className={`relative bg-card/50 border rounded-2xl p-7 flex flex-col ${p.highlight ? "border-cyan-500/50 shadow-2xl shadow-cyan-500/10" : "border-border/50"}`}>
+              {p.highlight && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-to-r from-cyan-500 to-violet-500 text-white text-xs font-bold">
+                  Most Popular
                 </div>
-                <ul className="space-y-2.5 mb-7">
-                  {plan.features.map((f, j) => (
-                    <li key={j} className="flex items-center gap-2.5 text-xs text-slate-300">
-                      <Check className="w-3.5 h-3.5 text-green-400 shrink-0" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link href={plan.href}
-                  className={`block text-center py-3 rounded-xl text-sm font-bold transition-all ${plan.highlight ? "bg-gradient-to-r from-cyan-500 to-violet-600 text-white hover:from-cyan-400 hover:to-violet-500 shadow-[0_0_20px_rgba(0,212,255,0.25)]" : "border border-border/60 hover:border-cyan-400/40 text-muted-foreground hover:text-white"}`}>
-                  {plan.cta}
-                </Link>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Testimonials ── */}
-      <section className="py-24 px-4">
-        <div className="max-w-6xl mx-auto">
-          <SectionHeader
-            tag="💬 TESTIMONIALS"
-            title={<>Trusted by engineers<br /><span className="gradient-text">building the future</span></>}
-            sub="From solo makers to Fortune 500 edge deployments."
-          />
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {testimonials.map((t, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.06 }}
-                className="glass rounded-2xl p-6 glow-border">
-                <div className="flex gap-1 mb-4">
-                  {Array(5).fill(0).map((_, j) => <Star key={j} className="w-3 h-3 fill-amber-400 text-amber-400" />)}
+              )}
+              <div className="mb-6">
+                <h3 className="font-bold text-white text-lg mb-1">{p.name}</h3>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-3xl font-black text-white">{p.price}</span>
+                  <span className="text-muted-foreground text-sm">{p.period}</span>
                 </div>
-                <p className="text-sm text-slate-300 leading-relaxed mb-5">&ldquo;{t.text}&rdquo;</p>
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-violet-600 flex items-center justify-center text-xs font-bold text-white">{t.avatar}</div>
-                  <div>
-                    <div className="text-xs font-semibold text-white">{t.name}</div>
-                    <div className="text-[10px] text-muted-foreground">{t.role}</div>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Final CTA ── */}
-      <section className="py-24 px-4">
-        <div className="max-w-3xl mx-auto text-center">
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }}
-            className="relative rounded-3xl p-12 overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/15 via-violet-600/15 to-cyan-500/15 rounded-3xl border border-cyan-500/25" />
-            <div className="absolute inset-0 blur-3xl bg-gradient-to-br from-cyan-500/8 to-violet-600/8" />
-            <div className="relative z-10">
-              <div className="text-4xl mb-4">🚀</div>
-              <h2 className="text-3xl sm:text-4xl font-black text-white mb-4 tracking-tight">
-                Ready to build the<br /><span className="gradient-text">edge AI future?</span>
-              </h2>
-              <p className="text-muted-foreground text-base mb-8 max-w-lg mx-auto">
-                Join 10,000+ engineers deploying AI to edge devices. Free tier, no credit card.
-              </p>
-              <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                <Link href="/register" className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-400 hover:to-violet-500 text-white px-8 py-3.5 rounded-xl font-bold text-sm transition-all shadow-[0_0_30px_rgba(0,212,255,0.3)]">
-                  <Rocket className="w-4 h-4" /> Start Building Free
-                </Link>
-                <Link href="/docs" className="inline-flex items-center justify-center gap-2 border border-border/60 hover:border-cyan-400/30 text-muted-foreground hover:text-white px-8 py-3.5 rounded-xl font-semibold text-sm transition-all">
-                  <BookOpen className="w-4 h-4" /> Read the Docs
-                </Link>
               </div>
-            </div>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* ── Footer ── */}
-      <footer className="border-t border-border/20 bg-[#040810]/80 backdrop-blur">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-16">
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-10 mb-12">
-            {/* Brand */}
-            <div className="col-span-2 sm:col-span-4 lg:col-span-1">
-              <Link href="/" className="flex items-center gap-2 mb-4">
-                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-violet-600 flex items-center justify-center">
-                  <CircuitBoard className="w-3.5 h-3.5 text-white" />
-                </div>
-                <span className="font-black text-base"><span className="gradient-text">Aether</span><span className="text-slate-300">Grid</span></span>
+              <ul className="space-y-2.5 mb-8 flex-1">
+                {p.features.map(f => (
+                  <li key={f} className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                    <Check className="w-4 h-4 text-emerald-400 shrink-0" />{f}
+                  </li>
+                ))}
+              </ul>
+              <Link href="/register"
+                className={`text-center py-3 rounded-xl text-sm font-bold transition-all ${p.highlight ? "bg-gradient-to-r from-cyan-500 to-violet-500 text-white hover:opacity-90 shadow-lg shadow-cyan-500/20" : "border border-border/60 text-white hover:border-cyan-500/40"}`}>
+                {p.cta}
               </Link>
-              <p className="text-xs text-muted-foreground leading-relaxed mb-4 max-w-[200px]">
-                The world&apos;s most capable edge AI platform. From $3 chips to GPU clusters.
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Testimonials ─────────────────────────────────────────────────────── */}
+      <section className="py-24 border-y border-border/30 bg-muted/10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <Section className="text-center mb-12">
+            <h2 className="text-4xl font-bold text-white mb-4">Trusted by edge AI teams</h2>
+          </Section>
+          <div className="grid md:grid-cols-3 gap-6">
+            {TESTIMONIALS.map((t, i) => (
+              <motion.div key={t.name} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }} transition={{ delay: i * 0.1 }}
+                className="bg-card/50 border border-border/50 rounded-2xl p-6 hover:border-border transition-all">
+                <div className="flex gap-0.5 mb-3">
+                  {Array.from({ length: t.stars }).map((_, j) => (
+                    <Star key={j} className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />
+                  ))}
+                </div>
+                <p className="text-muted-foreground text-sm leading-relaxed mb-4">&ldquo;{t.body}&rdquo;</p>
+                <div>
+                  <div className="font-semibold text-white text-sm">{t.name}</div>
+                  <div className="text-muted-foreground text-xs">{t.role}</div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA ───────────────────────────────────────────────────────────────── */}
+      <section className="py-32 max-w-4xl mx-auto px-4 sm:px-6 text-center">
+        <Section>
+          <div className="relative">
+            <div className="absolute inset-0 -z-10 bg-gradient-to-r from-cyan-500/10 via-violet-500/10 to-cyan-500/10 blur-3xl rounded-3xl" />
+            <div className="bg-card/40 border border-border/50 rounded-3xl p-12">
+              <div className="inline-flex p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/30 mb-6">
+                <Rocket className="w-6 h-6 text-cyan-400" />
+              </div>
+              <h2 className="text-4xl font-bold text-white mb-4">Ready to deploy edge AI?</h2>
+              <p className="text-muted-foreground mb-8 max-w-md mx-auto">
+                Join 4,200+ engineering teams deploying AI to the edge. Start free — no credit card required.
               </p>
-              <div className="flex gap-3">
-                <a href="https://github.com/ShaikMuzzammil" target="_blank" rel="noopener noreferrer" className="w-8 h-8 rounded-lg border border-border/50 flex items-center justify-center text-muted-foreground hover:text-white hover:border-cyan-400/40 transition-all">
-                  <Github className="w-3.5 h-3.5" />
-                </a>
-                <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="w-8 h-8 rounded-lg border border-border/50 flex items-center justify-center text-muted-foreground hover:text-white hover:border-cyan-400/40 transition-all">
-                  <Twitter className="w-3.5 h-3.5" />
-                </a>
-                <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="w-8 h-8 rounded-lg border border-border/50 flex items-center justify-center text-muted-foreground hover:text-white hover:border-cyan-400/40 transition-all">
-                  <Linkedin className="w-3.5 h-3.5" />
-                </a>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Link href="/register"
+                  className="group flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold bg-gradient-to-r from-cyan-500 to-violet-500 text-white hover:opacity-90 transition-all shadow-2xl shadow-cyan-500/30">
+                  Create Free Account
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </Link>
+                <Link href="/login"
+                  className="flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold border border-border/60 text-white hover:border-cyan-500/40 transition-all">
+                  <Zap className="w-4 h-4 text-cyan-400" /> Try Demo
+                </Link>
               </div>
             </div>
+          </div>
+        </Section>
+      </section>
+
+      {/* ── Footer ────────────────────────────────────────────────────────────── */}
+      <footer id="docs" className="border-t border-border/30 bg-muted/10 py-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-8 mb-12">
+            {/* Brand */}
+            <div className="col-span-2 md:col-span-1">
+              <Link href="/" className="flex items-center gap-2 mb-4">
+                <CircuitBoard className="w-5 h-5 text-cyan-400" />
+                <span className="font-bold text-white text-sm">AetherGrid AI</span>
+              </Link>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                The world-scale edge AI platform. Deploy anywhere, manage everything.
+              </p>
+              <div className="flex gap-3 mt-4">
+                <a href="https://github.com/ShaikMuzzammil" target="_blank" rel="noreferrer"
+                  className="text-muted-foreground hover:text-white transition-colors"><Github className="w-4 h-4" /></a>
+                <a href="https://linktr.ee/Shaik_Muzzammil" target="_blank" rel="noreferrer"
+                  className="text-muted-foreground hover:text-cyan-400 transition-colors"><ExternalLink className="w-4 h-4" /></a>
+              </div>
+            </div>
+
             {/* Links */}
             {[
-              {
-                title: "Platform", links: [
-                  { label: "Dashboard", href: "/dashboard" }, { label: "Devices", href: "/devices" },
-                  { label: "AI Models", href: "/ai-models" }, { label: "Deployments", href: "/deployments" },
-                  { label: "Analytics", href: "/analytics" },
-                ]
-              },
-              {
-                title: "Developers", links: [
-                  { label: "Documentation", href: "/docs" }, { label: "API Reference", href: "/docs#api" },
-                  { label: "SDK", href: "/docs#sdk" }, { label: "Examples", href: "/docs#examples" },
-                  { label: "Changelog", href: "/docs#changelog" },
-                ]
-              },
-              {
-                title: "Company", links: [
-                  { label: "About", href: "#" }, { label: "Blog", href: "#" },
-                  { label: "Careers", href: "#" }, { label: "Contact", href: "mailto:hello@aethergrid.ai" },
-                  { label: "Status", href: "#" },
-                ]
-              },
-              {
-                title: "Legal", links: [
-                  { label: "Terms of Service", href: "/legal/terms" }, { label: "Privacy Policy", href: "/legal/privacy" },
-                  { label: "Cookie Policy", href: "/legal/cookies" }, { label: "GDPR", href: "/legal/gdpr" },
-                ]
-              },
-            ].map((group, i) => (
-              <div key={i}>
-                <div className="text-xs font-bold text-white uppercase tracking-widest mb-4">{group.title}</div>
-                <ul className="space-y-2.5">
-                  {group.links.map((l, j) => (
-                    <li key={j}>
-                      <Link href={l.href} className="text-xs text-muted-foreground hover:text-cyan-400 transition-colors">{l.label}</Link>
-                    </li>
+              { heading: "Platform",   links: [["Dashboard","/dashboard"],["Devices","/devices"],["AI Models","/ai-models"],["Deployments","/deployments"],["Analytics","/analytics"]] },
+              { heading: "Developers", links: [["Documentation","/docs"],["API Reference","/docs"],["Python SDK","#"],["Node.js SDK","#"],["WebSocket API","#"]] },
+              { heading: "Company",    links: [["About","#"],["Blog","#"],["Careers","#"],["Status","#"],["Contact","#"]] },
+              { heading: "Legal",      links: [["Terms of Service","/legal/terms"],["Privacy Policy","/legal/privacy"],["Security","#"],["GDPR","#"]] },
+            ].map(col => (
+              <div key={col.heading}>
+                <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-3">{col.heading}</h4>
+                <ul className="space-y-2">
+                  {col.links.map(([label, href]) => (
+                    <li key={label}><Link href={href} className="text-xs text-muted-foreground hover:text-cyan-400 transition-colors">{label}</Link></li>
                   ))}
                 </ul>
               </div>
             ))}
           </div>
-          <div className="border-t border-border/20 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-xs text-muted-foreground">
-              © 2024 AetherGrid AI. Built by{" "}
-              <a href="https://linktr.ee/Shaik_Muzzammil" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 transition-colors">Shaik Muzzammil</a>.
+
+          <div className="border-t border-border/30 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-xs text-muted-foreground">© 2025 AetherGrid AI. Built by{" "}
+              <a href="https://linktr.ee/Shaik_Muzzammil" target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline">Shaik Muzzammil</a>.
             </p>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              All systems operational · 99.99% uptime
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              All systems operational
             </div>
           </div>
         </div>

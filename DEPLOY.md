@@ -1,64 +1,185 @@
-# AetherGrid AI — Deployment Guide
+# AetherGrid AI — Complete Deployment Guide
 
-## One-Shot Deploy
+## ⚡ One-command deploy
 
 ```bash
-bash push.sh https://github.com/YourUsername/aethergrid-ai.git
+bash push.sh https://github.com/YOUR_USERNAME/aethergrid-ai.git
 ```
 
-## Required Vercel Environment Variables
+Then set 4 env vars in Vercel and you're live.
 
-| Variable | Value | Where to get |
-|----------|-------|-------------|
-| `DATABASE_URL` | `postgres://...?pgbouncer=true&connection_limit=1` | Neon → Connection String (pooled) |
-| `DIRECT_URL` | `postgres://...` | Neon → Connection String (direct) |
-| `NEXTAUTH_SECRET` | Random string | Run: `openssl rand -base64 32` |
-| `NEXTAUTH_URL` | `https://your-app.vercel.app` | Your Vercel deployment URL |
+---
 
-## Step-by-Step
+## Step 1 — Get a Free Database (Neon)
 
-1. **Create Neon Database** (free at neon.tech)
-   - New project → copy both connection strings
+1. Go to **[neon.tech](https://neon.tech)** → sign up free (no card needed)
+2. Click **New Project** → name it `aethergrid-ai` → pick a region close to `iad1` (US East)
+3. Click **Connect** in the dashboard
+4. Copy **two** connection strings:
 
-2. **Push to GitHub**
-   ```bash
-   bash push.sh https://github.com/YOUR_USERNAME/aethergrid-ai.git
-   ```
+| Variable | Which string |
+|----------|-------------|
+| `DATABASE_URL` | **Pooled connection** — has `?pgbouncer=true` at the end |
+| `DIRECT_URL` | **Direct connection** — shorter URL, no pgbouncer |
 
-3. **Connect to Vercel**
-   - Import GitHub repo at vercel.com/new
-   - Add all 4 env vars
-   - Deploy
+> **Why two?** `DATABASE_URL` is used at runtime (supports many simultaneous connections via PgBouncer). `DIRECT_URL` is used by Prisma migrations to push the schema directly.
 
-4. **Seed the Database** (optional but recommended)
-   ```bash
-   # In the repo root with DIRECT_URL set:
-   npm run db:push && npm run db:seed
-   ```
+---
 
-## Demo Credentials
+## Step 2 — Generate Auth Secret
 
-After first deploy (or after seeding), log in with:
+Run in your terminal:
 
-- **Email:** `demo@aethergrid.ai`
-- **Password:** `DemoPass123!`
+```bash
+# macOS / Linux
+openssl rand -base64 32
 
-> **Note:** If you don't run db:seed, the demo user is **auto-created** on first login attempt — just click "Demo Login" on the login page.
+# Windows PowerShell
+[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+```
 
-## Build Troubleshooting
+Copy the output — this is your `NEXTAUTH_SECRET`.
 
-| Error | Fix |
-|-------|-----|
-| `DATABASE_URL is not set` | Add env vars to Vercel |
-| `Invalid credentials` | Click "Demo Login" — it auto-creates the user |
-| `Registration failed` | Check DATABASE_URL is the pooled URL |
-| `Internal server error` | Check NEXTAUTH_SECRET is set |
+---
 
-## Tech Stack
+## Step 3 — Push to GitHub
 
-- **Framework:** Next.js 15.5 + TypeScript + Tailwind CSS
-- **Auth:** NextAuth.js v4 with JWT sessions
-- **Database:** PostgreSQL via Prisma + Neon
-- **UI:** Lucide React + Recharts + Framer Motion + Sonner
-- **Fonts:** Space Grotesk (display) + JetBrains Mono (code)
-- **Deploy:** Vercel Edge Network
+```bash
+# In the extracted project folder:
+bash push.sh https://github.com/YOUR_USERNAME/aethergrid-ai.git
+```
+
+This initialises a fresh git history and force-pushes to your repo.
+
+---
+
+## Step 4 — Deploy on Vercel
+
+1. Go to **[vercel.com/new](https://vercel.com/new)**
+2. Import your GitHub repo
+3. **Do NOT change the build settings** — `vercel.json` handles everything
+4. Click **Environment Variables** and add all 4:
+
+| Variable | Value | Required |
+|----------|-------|----------|
+| `DATABASE_URL` | Neon pooled URL | ✅ |
+| `DIRECT_URL` | Neon direct URL | ✅ |
+| `NEXTAUTH_SECRET` | Output from openssl | ✅ |
+| `NEXTAUTH_URL` | `https://your-app.vercel.app` | ✅ |
+
+5. Click **Deploy**
+
+---
+
+## What happens during build
+
+The `vercel.json` build command runs:
+
+```
+prisma generate → prisma db push → next build
+```
+
+- **`prisma generate`** — creates the TypeScript Prisma client
+- **`prisma db push`** — creates all database tables in Neon automatically
+- **`next build`** — compiles the Next.js app
+
+You never need to run migrations manually.
+
+---
+
+## Step 5 — First Login
+
+After deploy succeeds, visit your app:
+
+### Option A — Demo Account (instant)
+Click **"Try Demo Account"** on the login page.
+The demo user is auto-created on first click.
+
+### Option B — Create Your Account
+Go to `/register` and sign up with any email.
+
+### Demo Credentials
+```
+Email:    demo@aethergrid.ai
+Password: DemoPass123!
+```
+
+---
+
+## Troubleshooting
+
+### "Registration failed"
+**Cause:** Database tables don't exist yet.
+**Fix:** Redeploy the app — the build command now runs `prisma db push` automatically.
+```bash
+# In Vercel: Deployments → Redeploy
+```
+
+### "Invalid credentials" on demo login
+**Cause:** Demo user not created yet.
+**Fix:** The demo button now auto-registers the user. If it still fails, check `NEXTAUTH_SECRET` is set.
+
+### "Database not reachable"
+**Cause:** `DATABASE_URL` or `DIRECT_URL` is wrong.
+**Fix:** Go to Neon → Connect → copy the exact strings again. Make sure `DATABASE_URL` has `?pgbouncer=true&connection_limit=1` at the end.
+
+### Build fails with TypeScript error
+**Fix:** The `next.config.ts` has `typescript: { ignoreBuildErrors: true }` — no TS error should fail the build. If it does, check the Vercel build log and open a GitHub issue.
+
+### "NEXTAUTH_URL mismatch"
+**Cause:** `NEXTAUTH_URL` doesn't match the actual deployment URL.
+**Fix:** Update `NEXTAUTH_URL` in Vercel env vars to match your exact Vercel URL (including `https://`).
+
+---
+
+## Local Development
+
+```bash
+# Install deps
+npm install
+
+# Create local env
+cp .env.example .env.local
+# Edit .env.local — set DATABASE_URL, DIRECT_URL, NEXTAUTH_SECRET, NEXTAUTH_URL=http://localhost:3000
+
+# Push schema to your Neon DB
+npx prisma db push
+
+# Seed demo data (optional)
+npm run db:seed
+
+# Start dev server
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000)
+
+---
+
+## Free Tier Limits
+
+| Service | Free Tier | Enough for |
+|---------|-----------|-----------|
+| **Neon** | 0.5 GB storage, 100 hrs compute/mo | Thousands of devices |
+| **Vercel** | 100 GB bandwidth, 6000 build min/mo | Full production use |
+| **NextAuth** | Unlimited | — |
+
+No credit card needed for any of these.
+
+---
+
+## Optional Integrations (all free tiers available)
+
+These unlock specific integration tiles inside the app but are **not required**:
+
+| Integration | Free Tier | Sign Up |
+|-------------|-----------|---------|
+| Slack Webhooks | Unlimited | [api.slack.com](https://api.slack.com/apps) |
+| SendGrid Email | 100 emails/day | [sendgrid.com](https://sendgrid.com) |
+| Mapbox Maps | 50,000 tile loads/mo | [mapbox.com](https://mapbox.com) |
+
+Add them to `.env.local` or Vercel env vars — see `.env.example` for variable names.
+
+---
+
+Built by [Shaik Muzzammil](https://linktr.ee/Shaik_Muzzammil) · [Portfolio](https://shaik-muzzammil-portfolio.vercel.app)
