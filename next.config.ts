@@ -3,8 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
-  images: { remotePatterns: [{ protocol:"https", hostname:"**" }] },
-  experimental: { serverComponentsExternalPackages: ["bcryptjs"] },
+  images: { remotePatterns: [{ protocol: "https", hostname: "**" }] },
+  serverExternalPackages: ["bcryptjs"],
 };
 
 export default nextConfig;

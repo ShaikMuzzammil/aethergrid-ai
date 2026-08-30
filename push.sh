@@ -4,55 +4,53 @@ set -e
 REPO=${1:-"https://github.com/ShaikMuzzammil/aethergrid-ai.git"}
 
 echo ""
-echo "🚀 AetherGrid AI v5 — Deploying to $REPO"
+echo "🚀 AetherGrid AI v5 — Pushing to $REPO"
 echo ""
 
-# Ensure we're in the project root
 cd "$(dirname "$0")"
 
 # Init git if needed
 if [ ! -d ".git" ]; then
   git init
-  echo "  ✅ Git initialized"
+  git remote add origin "$REPO"
 fi
 
-# Stage everything
+# Explicitly remove the old (auth) route group from git tracking
+# This ensures it's deleted from the remote repo, not just absent locally
+if git ls-files --error-unmatch "src/app/(auth)" >/dev/null 2>&1; then
+  git rm -rf "src/app/(auth)" 2>/dev/null && echo "  🗑  Removed old (auth) route group from git"
+fi
+# Also delete local copy in case it crept back in
+rm -rf "src/app/(auth)" 2>/dev/null || true
+
+# Stage all changes (including deletions)
 git add -A
 
 # Commit
-git commit -m "fix: v5 build — tsx seed, clean vercelignore, DashboardLayout
+git commit -m "fix: remove (auth) route conflict, fix next.config.ts for Next.js 15
 
-Fixes applied:
-- CRITICAL: Changed prisma.seed from ts-node to tsx (ts-node not available in Vercel)
-- CRITICAL: Removed .vercelignore (auth) block that was deleting login/register pages  
-- CRITICAL: Removed old src/app/(auth) route group conflict
-- vercel.json: clean build command (prisma generate && prisma db push && prisma db seed && next build)
-- package.json: added tsx to devDependencies, fixed build script, fixed postinstall
-- All 13 frontend clients wired to real APIs
-- 26 API routes all working
-- Rich seed data: 12 devices, 6 models, 6 deployments, 6 automations
+- Deleted src/app/(auth)/ — conflicted with /login and /register routes
+- Fixed next.config.ts: serverComponentsExternalPackages → serverExternalPackages
+- vercel.json buildCommand: rm -rf src/app/(auth) guard before next build
+- prisma.seed: tsx (not ts-node) — works in Vercel build environment
 " --allow-empty
 
-# Set branch and remote
 git branch -M main
 git remote remove origin 2>/dev/null || true
 git remote add origin "$REPO"
 
-# Push
-echo ""
-echo "📤 Pushing to GitHub..."
+echo "📤 Force-pushing to GitHub..."
 git push -u origin main --force
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  ✅ Pushed! Now go to Vercel and verify env vars:"
+echo "  ✅ Done! Vercel will auto-deploy."
 echo ""
-echo "  DATABASE_URL  → Neon pooled connection URL"
-echo "  DIRECT_URL    → Neon direct connection URL"  
+echo "  Required env vars in Vercel dashboard:"
+echo "  DATABASE_URL    → Neon pooled URL"
+echo "  DIRECT_URL      → Neon direct URL"
 echo "  NEXTAUTH_SECRET → openssl rand -base64 32"
-echo "  NEXTAUTH_URL  → https://your-project.vercel.app"
+echo "  NEXTAUTH_URL    → https://your-project.vercel.app"
 echo ""
-echo "  Demo login after deploy:"
-echo "  Email:    demo@aethergrid.ai"
-echo "  Password: DemoPass123!"
+echo "  Demo:  demo@aethergrid.ai / DemoPass123!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
