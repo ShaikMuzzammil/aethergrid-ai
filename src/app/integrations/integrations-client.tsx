@@ -1,120 +1,171 @@
 "use client";
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { Search, Plus, ExternalLink, RefreshCw } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
+import { Plus, X, Check, RefreshCw, Zap, Globe, ToggleLeft, ToggleRight, Settings } from "lucide-react";
 
-const INTEGRATIONS = [
-  { id: "aws", name: "AWS IoT Core", category: "Cloud", desc: "Bi-directional sync with AWS IoT device registry and shadow states.", connected: true, icon: "☁️", color: "orange" },
-  { id: "azure", name: "Azure IoT Hub", category: "Cloud", desc: "Sync device telemetry and commands with Azure IoT Hub.", connected: false, icon: "🔷", color: "blue" },
-  { id: "gcp", name: "Google Cloud IoT", category: "Cloud", desc: "Connect to GCP Pub/Sub for scalable message ingestion.", connected: false, icon: "🟡", color: "yellow" },
-  { id: "slack", name: "Slack", category: "Communication", desc: "Send device alerts and deployment notifications to Slack channels.", connected: true, icon: "💬", color: "green" },
-  { id: "discord", name: "Discord", category: "Communication", desc: "Receive real-time fleet updates in your Discord server.", connected: false, icon: "🎮", color: "violet" },
-  { id: "pagerduty", name: "PagerDuty", category: "Incident", desc: "Automatically create incidents when critical device alerts fire.", connected: false, icon: "🚨", color: "red" },
-  { id: "kafka", name: "Apache Kafka", category: "Streaming", desc: "Stream high-throughput sensor data to Kafka topics.", connected: false, icon: "📊", color: "cyan" },
-  { id: "rabbitmq", name: "RabbitMQ", category: "Messaging", desc: "Route device commands and events through RabbitMQ exchanges.", connected: false, icon: "🐰", color: "orange" },
-  { id: "grafana", name: "Grafana", category: "Analytics", desc: "Visualize AetherGrid metrics in Grafana dashboards.", connected: true, icon: "📈", color: "orange" },
-  { id: "datadog", name: "Datadog", category: "Monitoring", desc: "Send device metrics and traces to Datadog for APM.", connected: false, icon: "🐶", color: "violet" },
-  { id: "zapier", name: "Zapier", category: "Automation", desc: "Connect 5000+ apps with AetherGrid events via Zapier.", connected: false, icon: "⚡", color: "yellow" },
-  { id: "prom", name: "Prometheus", category: "Monitoring", desc: "Scrape AetherGrid metrics with Prometheus and Alertmanager.", connected: true, icon: "🔥", color: "red" },
-  { id: "jira", name: "Jira", category: "Project Mgmt", desc: "Auto-create tickets for device incidents and maintenance tasks.", connected: false, icon: "🔵", color: "blue" },
-  { id: "github", name: "GitHub Actions", category: "CI/CD", desc: "Trigger deployments and model updates from GitHub workflows.", connected: false, icon: "🐙", color: "slate" },
-  { id: "terraform", name: "Terraform", category: "IaC", desc: "Manage AetherGrid infrastructure as code with our Terraform provider.", connected: false, icon: "🏗️", color: "violet" },
-  { id: "twilio", name: "Twilio SMS", category: "Communication", desc: "Send SMS alerts for critical device failures to on-call engineers.", connected: false, icon: "📱", color: "red" },
-];
+const PROVIDER_ICONS: Record<string,string> = { slack:"🟢",github:"⚫",pagerduty:"🔴",datadog:"🐶",mqtt:"📡","aws-iot":"☁️",grafana:"🟠",jira:"🔵" };
+const CAT_COLORS: Record<string,string> = { Communication:"text-green-400", DevOps:"text-slate-300", Incident:"text-red-400", Monitoring:"text-amber-400", IoT:"text-cyan-400", "Cloud IoT":"text-orange-400", Visualization:"text-purple-400", Project:"text-blue-400" };
 
-const CATEGORIES = ["All", "Cloud", "Communication", "Monitoring", "Streaming", "Analytics", "Automation", "CI/CD", "Incident", "Messaging", "Project Mgmt", "IaC"];
+interface Integration { provider:string; name:string; category:string; description:string; id?:string; status:string; lastSync?:string; }
 
-export function IntegrationsClient() {
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("All");
-  const [connected, setConnected] = useState<Set<string>>(new Set(INTEGRATIONS.filter(i => i.connected).map(i => i.id)));
-  const [connecting, setConnecting] = useState<string | null>(null);
+export default function IntegrationsClient() {
+  const [integrations, setIntegrations] = useState<Integration[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string|null>(null);
+  const [configuring, setConfiguring] = useState<Integration|null>(null);
+  const [configForm, setConfigForm] = useState<Record<string,string>>({});
 
-  const filtered = INTEGRATIONS.filter(i =>
-    (i.name.toLowerCase().includes(search.toLowerCase()) || i.desc.toLowerCase().includes(search.toLowerCase())) &&
-    (category === "All" || i.category === category)
-  );
+  const CONFIG_FIELDS: Record<string, {key:string;label:string;placeholder:string;secret?:boolean}[]> = {
+    slack: [{key:"webhookUrl",label:"Webhook URL",placeholder:"https://hooks.slack.com/services/..."},{key:"channel",label:"Channel",placeholder:"#alerts"}],
+    github: [{key:"token",label:"Personal Access Token",placeholder:"ghp_...",secret:true},{key:"repo",label:"Repository",placeholder:"owner/repo"}],
+    pagerduty: [{key:"routingKey",label:"Routing Key",placeholder:"xxx",secret:true}],
+    datadog: [{key:"apiKey",label:"API Key",placeholder:"xxx",secret:true},{key:"site",label:"Site",placeholder:"datadoghq.com"}],
+    mqtt: [{key:"brokerUrl",label:"Broker URL",placeholder:"mqtt://broker.example.com:1883"},{key:"username",label:"Username",placeholder:"user"},{key:"password",label:"Password",placeholder:"pass",secret:true}],
+    "aws-iot": [{key:"endpoint",label:"IoT Endpoint",placeholder:"xxx.iot.region.amazonaws.com"},{key:"region",label:"Region",placeholder:"us-east-1"}],
+    grafana: [{key:"url",label:"Grafana URL",placeholder:"https://grafana.yourcompany.com"},{key:"apiKey",label:"API Key",placeholder:"xxx",secret:true}],
+    jira: [{key:"domain",label:"Domain",placeholder:"yourcompany.atlassian.net"},{key:"email",label:"Email",placeholder:"you@company.com"},{key:"token",label:"API Token",placeholder:"xxx",secret:true}],
+  };
 
-  async function toggleConnect(id: string) {
-    setConnecting(id);
-    await new Promise(r => setTimeout(r, 1000));
-    setConnected(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) { next.delete(id); toast.success("Integration disconnected"); }
-      else { next.add(id); toast.success("Integration connected successfully!"); }
-      return next;
-    });
-    setConnecting(null);
-  }
+  const fetchIntegrations = useCallback(async () => {
+    try {
+      const res = await fetch("/api/integrations");
+      const data = await res.json();
+      setIntegrations(data.integrations||[]);
+    } catch { toast.error("Failed to load integrations"); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchIntegrations(); }, [fetchIntegrations]);
+
+  const toggleConnect = async (integ:Integration) => {
+    if (integ.status === "DISCONNECTED") {
+      setConfiguring(integ);
+      const fields = CONFIG_FIELDS[integ.provider]||[];
+      setConfigForm(Object.fromEntries(fields.map(f=>[f.key,""])));
+    } else {
+      setSaving(integ.provider);
+      try {
+        await fetch("/api/integrations",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider:integ.provider,action:"disconnect"})});
+        toast.success(`${integ.name} disconnected`);
+        fetchIntegrations();
+      } catch { toast.error("Failed to disconnect"); }
+      finally { setSaving(null); }
+    }
+  };
+
+  const handleConnect = async () => {
+    if (!configuring) return;
+    setSaving(configuring.provider);
+    try {
+      const res = await fetch("/api/integrations",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider:configuring.provider,action:"connect",config:configForm})});
+      if (!res.ok) throw new Error((await res.json()).error||"Failed");
+      const d = await res.json();
+      toast.success(d.message||`${configuring.name} connected!`);
+      setConfiguring(null);
+      fetchIntegrations();
+    } catch (e:any) { toast.error(e.message||"Failed to connect"); }
+    finally { setSaving(null); }
+  };
+
+  const connected = integrations.filter(i=>i.status==="CONNECTED").length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-bold text-foreground">Integrations</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{INTEGRATIONS.length}+ integrations · {connected.size} connected</p></div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {[{ label: "Available", value: INTEGRATIONS.length, color: "text-foreground" }, { label: "Connected", value: connected.size, color: "text-green-400" }, { label: "Categories", value: CATEGORIES.length - 1, color: "text-cyan-400" }].map((s, i) => (
-          <div key={i} className="glass rounded-xl p-4 glow-border text-center">
-            <p className={cn("text-3xl font-bold", s.color)}>{s.value}</p>
-            <p className="text-xs text-muted-foreground mt-1">{s.label}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search integrations..."
-            className="w-full bg-muted/30 border border-border rounded-lg pl-9 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/60 transition-all" />
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-black text-white">Integrations</h1>
+          <p className="text-sm text-muted-foreground mt-1">{connected} connected · {integrations.length - connected} available</p>
         </div>
-        <div className="flex gap-1.5 flex-wrap">
-          {CATEGORIES.map(cat => (
-            <button key={cat} onClick={() => setCategory(cat)}
-              className={cn("px-3 py-1.5 rounded-lg text-xs font-medium border transition-all", category === cat ? "bg-primary/15 text-primary border-primary/30" : "text-muted-foreground border-border/50 hover:border-border hover:text-foreground")}>
-              {cat}
-            </button>
+        <button onClick={fetchIntegrations} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-white border border-border/50 px-3 py-2 rounded-lg transition-all">
+          <RefreshCw className="w-3.5 h-3.5"/> Refresh
+        </button>
+      </div>
+
+      {/* Connected badges */}
+      {connected > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {integrations.filter(i=>i.status==="CONNECTED").map(i=>(
+            <span key={i.provider} className="flex items-center gap-2 text-xs bg-green-400/10 border border-green-400/20 text-green-400 px-3 py-1.5 rounded-full">
+              <span>{PROVIDER_ICONS[i.provider]||"🔌"}</span>
+              {i.name}
+              <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
+            </span>
           ))}
         </div>
-      </div>
+      )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map((integration, i) => {
-          const isConnected = connected.has(integration.id);
-          const isConnecting = connecting === integration.id;
-          return (
-            <motion.div key={integration.id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-              className="glass rounded-xl p-5 glow-border hover:-translate-y-0.5 transition-all duration-200">
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-muted/50 flex items-center justify-center text-2xl">{integration.icon}</div>
-                  <div>
-                    <p className="font-semibold text-foreground text-sm">{integration.name}</p>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted/50 border border-border/50 text-muted-foreground">{integration.category}</span>
+      {/* Grid */}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {Array(8).fill(0).map((_,i)=><div key={i} className="glass rounded-2xl p-5 animate-pulse h-40"/>)}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {integrations.map(integ=>{
+            const isConnected = integ.status==="CONNECTED";
+            const isSaving = saving===integ.provider;
+            return (
+              <div key={integ.provider} className={`glass rounded-2xl p-5 glow-border transition-all ${isConnected?"border-green-400/30":""}`}>
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-2xl">{PROVIDER_ICONS[integ.provider]||"🔌"}</span>
+                    <div>
+                      <h3 className="text-sm font-bold text-white">{integ.name}</h3>
+                      <span className={`text-[9px] font-mono ${CAT_COLORS[integ.category]||"text-muted-foreground"}`}>{integ.category}</span>
+                    </div>
                   </div>
+                  <div className={`w-2.5 h-2.5 rounded-full mt-0.5 ${isConnected?"bg-green-400 animate-pulse":"bg-muted"}`}/>
                 </div>
-                {isConnected && <div className="flex items-center gap-1 text-xs text-green-400"><div className="w-1.5 h-1.5 rounded-full bg-green-400" />Live</div>}
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed mb-4">{integration.desc}</p>
-              <div className="flex gap-2">
-                <button onClick={() => toggleConnect(integration.id)} disabled={isConnecting}
-                  className={cn("flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all border",
-                    isConnected ? "border-red-500/30 text-red-400 hover:bg-red-500/10" :
-                      `border-${integration.color}-500/30 text-${integration.color}-400 hover:bg-${integration.color}-500/10 bg-${integration.color}-500/5`)}>
-                  {isConnecting ? <RefreshCw className="w-3 h-3 animate-spin" /> : isConnected ? null : <Plus className="w-3 h-3" />}
-                  {isConnecting ? "Connecting..." : isConnected ? "Disconnect" : "Connect"}
-                </button>
-                <button className="px-3 py-2 rounded-lg border border-border/50 text-muted-foreground hover:text-foreground hover:border-border text-xs transition-all flex items-center gap-1">
-                  <ExternalLink className="w-3 h-3" /> Docs
+                <p className="text-[11px] text-muted-foreground leading-snug mb-4">{integ.description}</p>
+                {integ.lastSync && (
+                  <p className="text-[9px] text-green-400 mb-3">Last sync: {new Date(integ.lastSync).toLocaleDateString()}</p>
+                )}
+                <button onClick={()=>toggleConnect(integ)} disabled={isSaving}
+                  className={`w-full py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                    isConnected?"bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-400/20":
+                    "bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-400/20"
+                  } disabled:opacity-50`}>
+                  {isSaving ? <div className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin"/> : isConnected ? <><ToggleLeft className="w-3.5 h-3.5"/>Disconnect</> : <><Zap className="w-3.5 h-3.5"/>Connect</>}
                 </button>
               </div>
-            </motion.div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Config Modal */}
+      {configuring && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={()=>setConfiguring(null)}/>
+          <div className="relative glass border border-border/50 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{PROVIDER_ICONS[configuring.provider]||"🔌"}</span>
+                <div><h2 className="text-xl font-black text-white">Connect {configuring.name}</h2><p className="text-xs text-muted-foreground mt-0.5">{configuring.category}</p></div>
+              </div>
+              <button onClick={()=>setConfiguring(null)} className="p-2 hover:bg-muted/30 rounded-lg"><X className="w-4 h-4 text-muted-foreground"/></button>
+            </div>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">{configuring.description}</p>
+              {(CONFIG_FIELDS[configuring.provider]||[]).map(f=>(
+                <div key={f.key}>
+                  <label className="text-xs font-semibold text-muted-foreground mb-1 block">{f.label}</label>
+                  <input type={f.secret?"password":"text"} value={configForm[f.key]||""} onChange={e=>setConfigForm(p=>({...p,[f.key]:e.target.value}))}
+                    placeholder={f.placeholder}
+                    className="w-full px-3 py-2.5 bg-muted/30 border border-border/50 rounded-xl text-sm text-white placeholder:text-muted-foreground focus:outline-none focus:border-cyan-400/50"/>
+                </div>
+              ))}
+              {(CONFIG_FIELDS[configuring.provider]||[]).length===0 && (
+                <div className="text-center py-4 text-muted-foreground text-sm">Click connect to authenticate via OAuth</div>
+              )}
+              <button onClick={handleConnect} disabled={saving!==null}
+                className="w-full bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-black font-bold py-3 rounded-xl flex items-center justify-center gap-2">
+                {saving ? <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin"/> : <><Check className="w-4 h-4"/>Connect {configuring.name}</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

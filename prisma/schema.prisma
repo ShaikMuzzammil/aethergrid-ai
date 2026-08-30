@@ -126,6 +126,13 @@ enum ExportStatus {
   FAILED
 }
 
+enum ExportFormat {
+  CSV
+  JSON
+  PARQUET
+  XLSX
+}
+
 enum NotificationType {
   SYSTEM
   DEVICE_ALERT
@@ -133,6 +140,23 @@ enum NotificationType {
   DEPLOYMENT
   SECURITY
   TEAM
+}
+
+enum AutomationCategory {
+  MONITORING
+  MAINTENANCE
+  INTEGRATION
+  SCALING
+  REPORTING
+  ML_OPS
+  SAFETY
+}
+
+enum IntegrationStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+  PENDING
 }
 
 // ─── Auth Models ─────────────────────────────────────────────────────────────
@@ -146,6 +170,13 @@ model User {
   password         String?
   role             UserRole       @default(USER)
   twoFactorEnabled Boolean        @default(false)
+  bio              String?
+  timezone         String?        @default("UTC")
+  language         String?        @default("en")
+  theme            String?        @default("dark")
+  notifyEmail      Boolean        @default(true)
+  notifyPush       Boolean        @default(true)
+  notifySlack      Boolean        @default(false)
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
@@ -160,6 +191,8 @@ model User {
   notifications     Notification[]
   auditLogs         AuditLog[]
   teamMembers       TeamMember[]
+  automations       Automation[]
+  integrations      Integration[]
 }
 
 model Account {
@@ -211,6 +244,9 @@ model Device {
   location        String?
   latitude        Float?
   longitude       Float?
+  cpu             Float?       @default(0)
+  memory          Float?       @default(0)
+  temperature     Float?
   tags            String[]
   metadata        Json?
   lastSeen        DateTime?
@@ -343,9 +379,14 @@ model Deployment {
   modelId     String?
   config      Json?
   url         String?
+  region      String?          @default("us-east-1")
   replicas    Int              @default(1)
   cpuLimit    String?
   memoryLimit String?
+  cpuUsage    Float?           @default(0)
+  memoryUsage Float?           @default(0)
+  reqPerMin   Int?             @default(0)
+  errorRate   Float?           @default(0)
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   userId      String
@@ -376,12 +417,51 @@ model DeploymentMetric {
   deployment Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
 }
 
+// ─── Automation ───────────────────────────────────────────────────────────────
+
+model Automation {
+  id          String             @id @default(cuid())
+  name        String
+  description String?
+  category    AutomationCategory @default(MONITORING)
+  active      Boolean            @default(true)
+  triggerType String
+  triggerConfig Json
+  actionType  String
+  actionConfig Json
+  runCount    Int                @default(0)
+  lastRun     DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  userId      String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Integrations ─────────────────────────────────────────────────────────────
+
+model Integration {
+  id          String            @id @default(cuid())
+  name        String
+  provider    String
+  status      IntegrationStatus @default(DISCONNECTED)
+  config      Json?
+  credentials Json?
+  lastSync    DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  userId      String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
 // ─── API Keys & Webhooks ─────────────────────────────────────────────────────
 
 model ApiKey {
   id          String    @id @default(cuid())
   name        String
   key         String    @unique
+  prefix      String
   userId      String
   permissions String[]
   lastUsed    DateTime?
@@ -425,7 +505,8 @@ model WebhookDelivery {
 model ExportJob {
   id          String       @id @default(cuid())
   name        String
-  format      String
+  format      ExportFormat @default(CSV)
+  dataType    String       @default("devices")
   status      ExportStatus @default(PENDING)
   fileUrl     String?
   fileSize    Int?
@@ -478,7 +559,8 @@ model Team {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  members TeamMember[]
+  members     TeamMember[]
+  invitations TeamInvitation[]
 }
 
 model TeamMember {
@@ -492,4 +574,17 @@ model TeamMember {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([teamId, userId])
+}
+
+model TeamInvitation {
+  id        String   @id @default(cuid())
+  teamId    String
+  email     String
+  role      TeamRole @default(MEMBER)
+  token     String   @unique
+  accepted  Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 }

@@ -1,11 +1,13 @@
+import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { AutomationsClient } from "./automations-client";
-export const metadata = { title: "Automations" };
-export default async function AutomationsPage() {
+import Client from "./automations-client";
+
+export const dynamic = "force-dynamic";
+
+export default async function Page() {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
-  return <DashboardLayout><AutomationsClient /></DashboardLayout>;
+  return <DashboardLayout><Client /></DashboardLayout>;
 }

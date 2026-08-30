@@ -1,17 +1,13 @@
+import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { DevicesClient } from "./devices-client";
+import Client from "./devices-client";
 
-export const metadata = { title: "Devices" };
+export const dynamic = "force-dynamic";
 
-export default async function DevicesPage() {
+export default async function Page() {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
-  return (
-    <DashboardLayout>
-      <DevicesClient />
-    </DashboardLayout>
-  );
+  return <DashboardLayout><Client /></DashboardLayout>;
 }

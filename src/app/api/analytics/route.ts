@@ -3,73 +3,67 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const userId = (session.user as any).id;
+  const uid = (session.user as any).id;
+  const { searchParams } = new URL(req.url);
+  const hours = parseInt(searchParams.get("hours") || "24");
 
   try {
-    const [totalDevices, onlineDevices, totalModels, deployedModels, totalDeployments] =
-      await Promise.all([
-        prisma.device.count({ where: { userId } }),
-        prisma.device.count({ where: { userId, status: "ONLINE" } }),
-        prisma.aiModel.count({ where: { userId } }),
-        prisma.aiModel.count({ where: { userId, status: "DEPLOYED" } }),
-        prisma.deployment.count({ where: { userId } }),
-      ]);
+    const since = new Date(Date.now() - hours * 3600 * 1000);
 
-    const recentAlerts = await prisma.deviceAlert.findMany({
-      where: { device: { userId }, resolved: false },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-      include: { device: { select: { name: true } } },
+    const [readings, deviceCount, modelCount, deploymentStats] = await Promise.all([
+      prisma.sensorReading.findMany({
+        where: { device: { userId: uid }, timestamp: { gte: since }, metric: { in: ["cpu","memory"] } },
+        orderBy: { timestamp: "asc" },
+        take: 1000,
+      }),
+      prisma.device.count({ where: { userId: uid, status: "ONLINE" } }),
+      prisma.aiModel.count({ where: { userId: uid, status: "DEPLOYED" } }),
+      prisma.deployment.findMany({
+        where: { userId: uid, status: "RUNNING" },
+        select: { cpuUsage: true, memoryUsage: true, reqPerMin: true, errorRate: true },
+      }),
+    ]);
+
+    // Group by hour bucket
+    const bucketMs = Math.max(3600000, (hours * 3600000) / 48);
+    const buckets: Record<string, { cpu: number[]; memory: number[]; ts: number }> = {};
+    readings.forEach(r => {
+      const bucket = Math.floor(r.timestamp.getTime() / bucketMs) * bucketMs;
+      const k = bucket.toString();
+      if (!buckets[k]) buckets[k] = { cpu: [], memory: [], ts: bucket };
+      if (r.metric === "cpu") buckets[k].cpu.push(r.value);
+      else if (r.metric === "memory") buckets[k].memory.push(r.value);
     });
 
-    const devicesByType = await prisma.device.groupBy({
-      by: ["type"],
-      where: { userId },
-      _count: { type: true },
-    });
+    const chartData = Object.values(buckets)
+      .sort((a, b) => a.ts - b.ts)
+      .map(b => ({
+        time: new Date(b.ts).toISOString(),
+        cpu: b.cpu.length ? Math.round(b.cpu.reduce((a, x) => a + x, 0) / b.cpu.length) : 0,
+        memory: b.memory.length ? Math.round(b.memory.reduce((a, x) => a + x, 0) / b.memory.length) : 0,
+      }));
 
-    const devicesByStatus = await prisma.device.groupBy({
-      by: ["status"],
-      where: { userId },
-      _count: { status: true },
-    });
-
-    const modelsByStatus = await prisma.aiModel.groupBy({
-      by: ["status"],
-      where: { userId },
-      _count: { status: true },
-    });
+    const totalReq = deploymentStats.reduce((a, d) => a + (d.reqPerMin || 0), 0);
+    const avgCpu = deploymentStats.length
+      ? Math.round(deploymentStats.reduce((a, d) => a + (d.cpuUsage || 0), 0) / deploymentStats.length)
+      : 0;
 
     return NextResponse.json({
-      overview: {
-        totalDevices,
-        onlineDevices,
-        offlineDevices: totalDevices - onlineDevices,
-        deviceUptime: totalDevices > 0 ? Math.round((onlineDevices / totalDevices) * 100) : 0,
-        totalModels,
-        deployedModels,
-        totalDeployments,
-        activeAlerts: recentAlerts.length,
+      chartData,
+      summary: {
+        activeDevices: deviceCount,
+        deployedModels: modelCount,
+        totalReqPerMin: totalReq,
+        avgCpu,
+        dataPoints: readings.length,
       },
-      devicesByType: devicesByType.map((d) => ({
-        type: d.type,
-        count: d._count.type,
-      })),
-      devicesByStatus: devicesByStatus.map((d) => ({
-        status: d.status,
-        count: d._count.status,
-      })),
-      modelsByStatus: modelsByStatus.map((m) => ({
-        status: m.status,
-        count: m._count.status,
-      })),
-      recentAlerts,
+      hours,
     });
-  } catch (err) {
-    console.error("Analytics error:", err);
-    return NextResponse.json({ error: "Failed to fetch analytics" }, { status: 500 });
+  } catch (e) {
+    console.error("Analytics error:", e);
+    return NextResponse.json({ chartData: [], summary: {}, hours }, { status: 200 });
   }
 }

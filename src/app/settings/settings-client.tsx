@@ -1,370 +1,323 @@
 "use client";
-import { useState } from "react";
-import { motion } from "framer-motion";
-import {
-  User, Shield, Bell, Palette, Globe, Trash2,
-  Camera, Check, RefreshCw, Eye, EyeOff, Moon, Sun,
-  Smartphone, Mail, Slack, Webhook, ToggleLeft, ToggleRight, Save
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useState, useEffect } from "react";
+import { useSession, signOut } from "next-auth/react";
 import { toast } from "sonner";
-import { signOut } from "next-auth/react";
+import {
+  User, Lock, Bell, Palette, Settings, Shield, Globe,
+  Check, Save, Eye, EyeOff, Sun, Moon, LogOut
+} from "lucide-react";
 
 const TABS = [
-  { id: "profile", label: "Profile", icon: User },
-  { id: "security", label: "Security", icon: Shield },
-  { id: "notifications", label: "Notifications", icon: Bell },
-  { id: "appearance", label: "Appearance", icon: Palette },
-  { id: "advanced", label: "Advanced", icon: Globe },
+  { id:"profile", label:"Profile", icon:<User className="w-4 h-4"/> },
+  { id:"security", label:"Security", icon:<Lock className="w-4 h-4"/> },
+  { id:"notifications", label:"Notifications", icon:<Bell className="w-4 h-4"/> },
+  { id:"appearance", label:"Appearance", icon:<Palette className="w-4 h-4"/> },
+  { id:"advanced", label:"Advanced", icon:<Settings className="w-4 h-4"/> },
 ];
 
-type NotifKey = "deviceAlerts" | "modelComplete" | "deploymentEvents" | "securityAlerts" | "teamActivity" | "weeklyDigest";
-interface NotifPrefs { deviceAlerts: boolean; modelComplete: boolean; deploymentEvents: boolean; securityAlerts: boolean; teamActivity: boolean; weeklyDigest: boolean; }
+const TIMEZONES = ["UTC","America/New_York","America/Chicago","America/Los_Angeles","Europe/London","Europe/Paris","Asia/Kolkata","Asia/Tokyo","Australia/Sydney"];
+const LANGUAGES = [{code:"en",label:"English"},{code:"es",label:"Español"},{code:"fr",label:"Français"},{code:"de",label:"Deutsch"},{code:"ja",label:"日本語"},{code:"zh",label:"中文"}];
 
-export function SettingsClient({ user }: { user: any }) {
-  const [tab, setTab] = useState("profile");
+export default function SettingsClient() {
+  const { data: session, update: updateSession } = useSession();
+  const [activeTab, setActiveTab] = useState("profile");
+  const [profile, setProfile] = useState({ name:"", bio:"", timezone:"UTC", language:"en" });
+  const [notifications, setNotifications] = useState({ notifyEmail:true, notifyPush:true, notifySlack:false });
+  const [appearance, setAppearance] = useState({ theme:"dark" });
+  const [security, setSecurity] = useState({ currentPassword:"", newPassword:"", confirmPassword:"" });
+  const [showPass, setShowPass] = useState<Record<string,boolean>>({});
   const [saving, setSaving] = useState(false);
-  const [showPass, setShowPass] = useState(false);
-  const [profile, setProfile] = useState({ name: user?.name || "", email: user?.email || "", bio: "", timezone: "Asia/Kolkata", language: "en" });
-  const [notifs, setNotifs] = useState<NotifPrefs>({ deviceAlerts: true, modelComplete: true, deploymentEvents: true, securityAlerts: true, teamActivity: false, weeklyDigest: true });
-  const [security, setSecurity] = useState({ currentPassword: "", newPassword: "", confirmPassword: "", twoFA: false });
-  const [theme, setTheme] = useState("dark");
-  const [accentColor, setAccentColor] = useState("cyan");
-  const [compactMode, setCompactMode] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
-  async function save() {
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const res = await fetch("/api/users/profile");
+        if (!res.ok) return;
+        const data = await res.json();
+        setProfile({ name: data.name||"", bio: data.bio||"", timezone: data.timezone||"UTC", language: data.language||"en" });
+        setNotifications({ notifyEmail: data.notifyEmail??true, notifyPush: data.notifyPush??true, notifySlack: data.notifySlack??false });
+        setAppearance({ theme: data.theme||"dark" });
+        setLoaded(true);
+      } catch {}
+    };
+    fetchProfile();
+  }, []);
+
+  const saveProfile = async () => {
     setSaving(true);
-    await new Promise(r => setTimeout(r, 900));
-    toast.success("Settings saved successfully!");
-    setSaving(false);
-  }
+    try {
+      const res = await fetch("/api/users/profile", {
+        method:"PATCH", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ name:profile.name, bio:profile.bio, timezone:profile.timezone, language:profile.language }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error||"Failed");
+      await updateSession({ name: profile.name });
+      toast.success("Profile updated!");
+    } catch (e:any) { toast.error(e.message||"Failed"); }
+    finally { setSaving(false); }
+  };
 
-  function Input({ label, value, onChange, type = "text", placeholder = "" }: any) {
-    return (
-      <div>
-        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{label}</label>
-        <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-          className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-all" />
-      </div>
-    );
-  }
+  const saveNotifications = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/users/profile", {
+        method:"PATCH", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(notifications),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast.success("Notification preferences saved!");
+    } catch { toast.error("Failed"); }
+    finally { setSaving(false); }
+  };
 
-  function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
-    return (
-      <button onClick={() => onChange(!value)}>
-        {value ? <ToggleRight className="w-8 h-8 text-primary" /> : <ToggleLeft className="w-8 h-8 text-muted-foreground" />}
-      </button>
-    );
-  }
+  const saveAppearance = async () => {
+    setSaving(true);
+    try {
+      await fetch("/api/users/profile", { method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ theme: appearance.theme }) });
+      toast.success("Appearance saved!");
+    } catch { toast.error("Failed"); }
+    finally { setSaving(false); }
+  };
+
+  const changePassword = async () => {
+    if (!security.currentPassword || !security.newPassword) { toast.error("Fill in all fields"); return; }
+    if (security.newPassword !== security.confirmPassword) { toast.error("Passwords do not match"); return; }
+    if (security.newPassword.length < 8) { toast.error("Password must be at least 8 characters"); return; }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/users/profile", {
+        method:"PATCH", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ currentPassword:security.currentPassword, newPassword:security.newPassword }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error||"Failed");
+      toast.success("Password changed!");
+      setSecurity({ currentPassword:"", newPassword:"", confirmPassword:"" });
+    } catch (e:any) { toast.error(e.message||"Failed"); }
+    finally { setSaving(false); }
+  };
+
+  const inputCls = "w-full px-3 py-2.5 bg-muted/30 border border-border/50 rounded-xl text-sm text-white placeholder:text-muted-foreground focus:outline-none focus:border-cyan-400/50 transition-all";
+  const labelCls = "text-xs font-semibold text-muted-foreground mb-1 block";
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="p-6 max-w-4xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Settings</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Manage your account, preferences, and security</p>
+        <h1 className="text-2xl font-black text-white">Settings</h1>
+        <p className="text-sm text-muted-foreground mt-1">Manage your account, preferences, and security</p>
       </div>
 
-      <div className="flex gap-6 flex-col lg:flex-row">
+      <div className="flex flex-col lg:flex-row gap-6">
         {/* Sidebar */}
-        <aside className="lg:w-52 flex-shrink-0">
-          <nav className="space-y-1">
-            {TABS.map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)}
-                className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all text-left",
-                  tab === t.id ? "bg-primary/10 text-primary border border-primary/20" : "text-muted-foreground hover:text-foreground hover:bg-muted/50")}>
-                <t.icon className="w-4 h-4" />{t.label}
-              </button>
-            ))}
-          </nav>
-        </aside>
+        <div className="lg:w-56 space-y-1 shrink-0">
+          {TABS.map(tab=>(
+            <button key={tab.id} onClick={()=>setActiveTab(tab.id)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab===tab.id?"bg-cyan-500/15 text-cyan-400 border border-cyan-400/30":"text-muted-foreground hover:text-white hover:bg-muted/30"}`}>
+              {tab.icon} {tab.label}
+            </button>
+          ))}
+          <div className="pt-4 border-t border-border/30">
+            <button onClick={()=>signOut({callbackUrl:"/login"})} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-red-400 hover:bg-red-500/10 transition-all">
+              <LogOut className="w-4 h-4"/> Sign Out
+            </button>
+          </div>
+        </div>
 
         {/* Content */}
-        <div className="flex-1 glass rounded-2xl glow-border overflow-hidden">
-          {/* Profile */}
-          {tab === "profile" && (
-            <div className="p-6 space-y-6">
-              <h2 className="font-bold text-foreground">Profile Information</h2>
+        <div className="flex-1">
+          {activeTab === "profile" && (
+            <div className="glass rounded-2xl p-6 space-y-5">
+              <h2 className="text-lg font-bold text-white">Profile Settings</h2>
               {/* Avatar */}
               <div className="flex items-center gap-4">
-                <div className="relative">
-                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500/30 to-violet-600/30 border-2 border-primary/30 flex items-center justify-center text-3xl font-bold text-primary">
-                    {profile.name?.charAt(0) || "U"}
-                  </div>
-                  <button className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary flex items-center justify-center shadow-lg hover:scale-110 transition-transform">
-                    <Camera className="w-3.5 h-3.5 text-primary-foreground" />
-                  </button>
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500/30 to-violet-500/30 flex items-center justify-center border border-cyan-400/20 text-2xl font-black text-cyan-400">
+                  {profile.name ? profile.name[0].toUpperCase() : (session?.user?.email?.[0]?.toUpperCase()||"?")}
                 </div>
                 <div>
-                  <p className="font-semibold text-foreground">{profile.name || "Your Name"}</p>
-                  <p className="text-sm text-muted-foreground">{profile.email}</p>
-                  <p className="text-xs text-primary mt-1 cursor-pointer hover:underline">Change avatar</p>
+                  <p className="text-sm font-semibold text-white">{session?.user?.name||"Demo User"}</p>
+                  <p className="text-xs text-muted-foreground">{session?.user?.email}</p>
                 </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Input label="Full Name" value={profile.name} onChange={(v: string) => setProfile(p => ({ ...p, name: v }))} placeholder="John Doe" />
-                <Input label="Email Address" value={profile.email} onChange={(v: string) => setProfile(p => ({ ...p, email: v }))} type="email" placeholder="you@company.com" />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Bio</label>
-                <textarea value={profile.bio} onChange={e => setProfile(p => ({ ...p, bio: e.target.value }))}
-                  placeholder="Tell your team a bit about yourself..."
-                  rows={3} className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/60 transition-all resize-none" />
+                <label className={labelCls}>Display Name</label>
+                <input value={profile.name} onChange={e=>setProfile(p=>({...p,name:e.target.value}))} placeholder="Your name" className={inputCls}/>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className={labelCls}>Bio</label>
+                <textarea value={profile.bio} onChange={e=>setProfile(p=>({...p,bio:e.target.value}))} placeholder="Short bio..." rows={3}
+                  className={`${inputCls} resize-none`}/>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Timezone</label>
-                  <select value={profile.timezone} onChange={e => setProfile(p => ({ ...p, timezone: e.target.value }))}
-                    className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary/60 transition-all">
-                    {["Asia/Kolkata", "UTC", "America/New_York", "America/Los_Angeles", "Europe/London", "Europe/Berlin", "Asia/Tokyo", "Australia/Sydney"].map(tz => <option key={tz} value={tz}>{tz}</option>)}
+                  <label className={labelCls}>Timezone</label>
+                  <select value={profile.timezone} onChange={e=>setProfile(p=>({...p,timezone:e.target.value}))} className={inputCls}>
+                    {TIMEZONES.map(tz=><option key={tz} value={tz}>{tz}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Language</label>
-                  <select value={profile.language} onChange={e => setProfile(p => ({ ...p, language: e.target.value }))}
-                    className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary/60 transition-all">
-                    {[["en", "English"], ["es", "Spanish"], ["fr", "French"], ["de", "German"], ["ja", "Japanese"], ["zh", "Chinese"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  <label className={labelCls}>Language</label>
+                  <select value={profile.language} onChange={e=>setProfile(p=>({...p,language:e.target.value}))} className={inputCls}>
+                    {LANGUAGES.map(l=><option key={l.code} value={l.code}>{l.label}</option>)}
                   </select>
                 </div>
               </div>
-              <div className="flex justify-end pt-2">
-                <button onClick={save} disabled={saving}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-400 hover:to-violet-500 text-white rounded-xl text-sm font-medium transition-all disabled:opacity-60">
-                  {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  {saving ? "Saving..." : "Save Changes"}
+              <button onClick={saveProfile} disabled={saving} className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-black font-bold px-5 py-2.5 rounded-xl transition-all">
+                {saving?<div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin"/>:<Save className="w-4 h-4"/>} Save Profile
+              </button>
+            </div>
+          )}
+
+          {activeTab === "security" && (
+            <div className="glass rounded-2xl p-6 space-y-6">
+              <h2 className="text-lg font-bold text-white">Security</h2>
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2"><Lock className="w-4 h-4 text-cyan-400"/>Change Password</h3>
+                {[
+                  {key:"currentPassword",label:"Current Password",placeholder:"Enter current password"},
+                  {key:"newPassword",label:"New Password",placeholder:"Minimum 8 characters"},
+                  {key:"confirmPassword",label:"Confirm New Password",placeholder:"Repeat new password"},
+                ].map(f=>(
+                  <div key={f.key}>
+                    <label className={labelCls}>{f.label}</label>
+                    <div className="relative">
+                      <input
+                        type={showPass[f.key]?"text":"password"}
+                        value={(security as any)[f.key]}
+                        onChange={e=>setSecurity(p=>({...p,[f.key]:e.target.value}))}
+                        placeholder={f.placeholder}
+                        className={`${inputCls} pr-10`}/>
+                      <button onClick={()=>setShowPass(p=>({...p,[f.key]:!p[f.key]}))} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white">
+                        {showPass[f.key]?<EyeOff className="w-4 h-4"/>:<Eye className="w-4 h-4"/>}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <button onClick={changePassword} disabled={saving} className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-black font-bold px-5 py-2.5 rounded-xl transition-all">
+                  {saving?<div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin"/>:<Shield className="w-4 h-4"/>} Update Password
                 </button>
               </div>
-            </div>
-          )}
-
-          {/* Security */}
-          {tab === "security" && (
-            <div className="p-6 space-y-6">
-              <h2 className="font-bold text-foreground">Security Settings</h2>
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-foreground">Change Password</h3>
-                <div className="space-y-3">
-                  {[
-                    { label: "Current Password", key: "currentPassword" },
-                    { label: "New Password", key: "newPassword" },
-                    { label: "Confirm New Password", key: "confirmPassword" },
-                  ].map(field => (
-                    <div key={field.key}>
-                      <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{field.label}</label>
-                      <div className="relative">
-                        <input type={showPass ? "text" : "password"}
-                          value={(security as any)[field.key]}
-                          onChange={e => setSecurity(s => ({ ...s, [field.key]: e.target.value }))}
-                          className="w-full bg-muted/30 border border-border rounded-lg px-3 pr-10 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary/60 transition-all" />
-                        <button type="button" onClick={() => setShowPass(!showPass)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                          {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  <button onClick={() => { toast.success("Password updated!"); setSecurity(s => ({ ...s, currentPassword: "", newPassword: "", confirmPassword: "" })); }}
-                    disabled={!security.currentPassword || !security.newPassword || security.newPassword !== security.confirmPassword}
-                    className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-violet-600 text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-all">
-                    Update Password
-                  </button>
-                </div>
-              </div>
-              <div className="border-t border-border/50 pt-6">
-                <div className="flex items-center justify-between">
+              <div className="border-t border-border/30 pt-5">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-3"><Shield className="w-4 h-4 text-amber-400"/>Two-Factor Authentication</h3>
+                <p className="text-xs text-muted-foreground mb-4">Add an extra layer of security with TOTP authentication.</p>
+                <div className="flex items-center justify-between p-4 glass rounded-xl border border-border/30">
                   <div>
-                    <p className="text-sm font-semibold text-foreground">Two-Factor Authentication (2FA)</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Protect your account with TOTP authenticator</p>
+                    <p className="text-sm font-semibold text-white">Authenticator App</p>
+                    <p className="text-xs text-muted-foreground">Use Google Authenticator, Authy, or any TOTP app</p>
                   </div>
-                  <Toggle value={security.twoFA} onChange={v => setSecurity(s => ({ ...s, twoFA: v }))} />
+                  <span className="text-[10px] bg-amber-400/10 text-amber-400 px-2 py-1 rounded-full font-mono">Not Enabled</span>
                 </div>
-                {security.twoFA && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
-                    className="mt-4 glass rounded-xl p-4 border border-primary/20">
-                    <p className="text-xs text-muted-foreground mb-3">Scan this QR code with your authenticator app:</p>
-                    <div className="w-32 h-32 bg-white rounded-lg flex items-center justify-center mx-auto mb-3">
-                      <div className="grid grid-cols-8 gap-0.5 p-2">
-                        {Array.from({ length: 64 }, (_, i) => <div key={i} className={cn("w-3 h-3", Math.random() > 0.5 ? "bg-black" : "bg-white")} />)}
-                      </div>
-                    </div>
-                    <p className="text-xs text-center text-muted-foreground">Or enter code: <span className="text-primary font-mono">JBSWY3DPEHPK3PXP</span></p>
-                  </motion.div>
-                )}
               </div>
-              <div className="border-t border-border/50 pt-6">
-                <h3 className="text-sm font-semibold text-foreground mb-3">Active Sessions</h3>
-                {[
-                  { device: "Chrome on macOS", ip: "103.24.81.xx", location: "Chennai, India", current: true, time: "Now" },
-                  { device: "Safari on iPhone", ip: "103.24.81.xx", location: "Chennai, India", current: false, time: "2h ago" },
-                  { device: "Edge on Windows", ip: "52.14.xx.xx", location: "Mumbai, India", current: false, time: "3d ago" },
-                ].map((session, i) => (
-                  <div key={i} className="flex items-center justify-between py-3 border-b border-border/30 last:border-0">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-muted/50 flex items-center justify-center">
-                        <Smartphone className="w-4 h-4 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-foreground flex items-center gap-2">
-                          {session.device}
-                          {session.current && <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-400/10 text-green-400 border border-green-400/20">Current</span>}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{session.location} · {session.ip} · {session.time}</p>
-                      </div>
-                    </div>
-                    {!session.current && (
-                      <button onClick={() => toast.success("Session revoked")} className="text-xs text-red-400 hover:underline">Revoke</button>
-                    )}
+              <div className="border-t border-border/30 pt-5">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-3"><Globe className="w-4 h-4 text-green-400"/>Active Sessions</h3>
+                <div className="p-4 glass rounded-xl border border-border/30 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-white">Current Session</p>
+                    <p className="text-xs text-muted-foreground">This device · JWT Session</p>
                   </div>
-                ))}
-              </div>
-              <div className="border-t border-red-500/20 pt-6">
-                <h3 className="text-sm font-semibold text-red-400 mb-2">Danger Zone</h3>
-                <div className="glass rounded-xl p-4 border border-red-500/20">
-                  <p className="text-sm font-medium text-foreground">Delete Account</p>
-                  <p className="text-xs text-muted-foreground mt-1 mb-3">Permanently delete your account and all associated data. This cannot be undone.</p>
-                  <button onClick={() => toast.error("Please contact support to delete your account.")}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 text-sm transition-all">
-                    <Trash2 className="w-4 h-4" /> Delete Account
-                  </button>
+                  <span className="text-[10px] bg-green-400/10 text-green-400 px-2 py-1 rounded-full flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>Active</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Notifications */}
-          {tab === "notifications" && (
-            <div className="p-6 space-y-6">
-              <h2 className="font-bold text-foreground">Notification Preferences</h2>
-              <div className="space-y-4">
+          {activeTab === "notifications" && (
+            <div className="glass rounded-2xl p-6 space-y-5">
+              <h2 className="text-lg font-bold text-white">Notification Preferences</h2>
+              <div className="space-y-3">
                 {[
-                  { key: "deviceAlerts" as NotifKey, icon: <Smartphone className="w-4 h-4" />, title: "Device Alerts", desc: "Get notified when devices go offline, overheat, or encounter errors" },
-                  { key: "modelComplete" as NotifKey, icon: <Check className="w-4 h-4" />, title: "Model Training Complete", desc: "Receive notifications when training jobs finish or fail" },
-                  { key: "deploymentEvents" as NotifKey, icon: <Globe className="w-4 h-4" />, title: "Deployment Events", desc: "Be alerted on deployment success, failures, and auto-scaling events" },
-                  { key: "securityAlerts" as NotifKey, icon: <Shield className="w-4 h-4" />, title: "Security Alerts", desc: "Critical notifications for suspicious login attempts and API key misuse" },
-                  { key: "teamActivity" as NotifKey, icon: <User className="w-4 h-4" />, title: "Team Activity", desc: "Updates when teammates add devices, models, or modify settings" },
-                  { key: "weeklyDigest" as NotifKey, icon: <Mail className="w-4 h-4" />, title: "Weekly Digest Email", desc: "A weekly summary of your fleet performance and activity" },
-                ].map(item => (
-                  <div key={item.key} className="flex items-center justify-between py-4 border-b border-border/30 last:border-0">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground">{item.icon}</div>
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{item.title}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
-                      </div>
+                  {key:"notifyEmail",label:"Email Notifications",desc:"Receive alerts and reports via email"},
+                  {key:"notifyPush",label:"Push Notifications",desc:"Browser push notifications for critical events"},
+                  {key:"notifySlack",label:"Slack Notifications",desc:"Forward alerts to your connected Slack workspace"},
+                ].map(n=>(
+                  <div key={n.key} className="flex items-center justify-between p-4 glass rounded-xl border border-border/30 hover:border-cyan-400/20 transition-all">
+                    <div>
+                      <p className="text-sm font-semibold text-white">{n.label}</p>
+                      <p className="text-xs text-muted-foreground">{n.desc}</p>
                     </div>
-                    <Toggle value={notifs[item.key]} onChange={v => setNotifs(n => ({ ...n, [item.key]: v }))} />
+                    <button onClick={()=>setNotifications(p=>({...p,[n.key]:!(p as any)[n.key]}))}
+                      className={`relative w-11 h-6 rounded-full transition-all ${(notifications as any)[n.key]?"bg-cyan-500":"bg-muted"}`}>
+                      <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${(notifications as any)[n.key]?"left-5":"left-0.5"}`}/>
+                    </button>
                   </div>
                 ))}
               </div>
-              <div className="border-t border-border/50 pt-5">
-                <h3 className="text-sm font-semibold text-foreground mb-3">Notification Channels</h3>
-                <div className="space-y-3">
+              <div className="border-t border-border/30 pt-4">
+                <h3 className="text-sm font-semibold text-white mb-3">Alert Thresholds</h3>
+                <div className="space-y-3 text-sm text-muted-foreground">
                   {[
-                    { icon: <Mail className="w-4 h-4" />, label: "Email", value: profile.email, connected: true },
-                    { icon: <Slack className="w-4 h-4" />, label: "Slack", value: "Connect Slack workspace", connected: false },
-                    { icon: <Webhook className="w-4 h-4" />, label: "Webhook", value: "Add webhook URL", connected: false },
-                  ].map((ch, i) => (
-                    <div key={i} className="flex items-center justify-between glass rounded-xl p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-muted/50 flex items-center justify-center text-muted-foreground">{ch.icon}</div>
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{ch.label}</p>
-                          <p className="text-xs text-muted-foreground">{ch.value}</p>
-                        </div>
-                      </div>
-                      <span className={cn("text-xs px-2.5 py-1 rounded-full border font-medium", ch.connected ? "bg-green-400/10 text-green-400 border-green-400/20" : "bg-muted/50 text-muted-foreground border-border/50 cursor-pointer hover:border-primary/40 hover:text-primary")}
-                        onClick={() => !ch.connected && toast.info(`Connect ${ch.label} channel`)}>
-                        {ch.connected ? "Connected" : "Connect"}
-                      </span>
+                    {label:"Device Offline Alert After",value:"10 minutes"},
+                    {label:"CPU Alert Threshold",value:"85%"},
+                    {label:"Memory Alert Threshold",value:"90%"},
+                  ].map((item,i)=>(
+                    <div key={i} className="flex items-center justify-between p-3 glass rounded-xl border border-border/20">
+                      <span>{item.label}</span>
+                      <span className="text-white font-mono text-xs">{item.value}</span>
                     </div>
                   ))}
                 </div>
               </div>
-              <div className="flex justify-end"><button onClick={save} disabled={saving}
-                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-violet-600 text-white rounded-xl text-sm font-medium transition-all disabled:opacity-60">
-                {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                {saving ? "Saving..." : "Save Preferences"}
-              </button></div>
+              <button onClick={saveNotifications} disabled={saving} className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-black font-bold px-5 py-2.5 rounded-xl transition-all">
+                {saving?<div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin"/>:<Save className="w-4 h-4"/>} Save Preferences
+              </button>
             </div>
           )}
 
-          {/* Appearance */}
-          {tab === "appearance" && (
-            <div className="p-6 space-y-6">
-              <h2 className="font-bold text-foreground">Appearance</h2>
+          {activeTab === "appearance" && (
+            <div className="glass rounded-2xl p-6 space-y-5">
+              <h2 className="text-lg font-bold text-white">Appearance</h2>
               <div>
-                <p className="text-sm font-semibold text-foreground mb-3">Theme</p>
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { id: "dark", label: "Dark", icon: <Moon className="w-5 h-5" />, preview: "bg-[#080c14]" },
-                    { id: "light", label: "Light", icon: <Sun className="w-5 h-5" />, preview: "bg-gray-100" },
-                    { id: "system", label: "System", icon: <Globe className="w-5 h-5" />, preview: "bg-gradient-to-br from-[#080c14] to-gray-100" },
-                  ].map(t => (
-                    <button key={t.id} onClick={() => setTheme(t.id)}
-                      className={cn("p-4 rounded-xl border text-center transition-all", theme === t.id ? "border-primary/60 bg-primary/10" : "border-border/50 hover:border-border hover:bg-muted/30")}>
-                      <div className={cn("w-full h-12 rounded-lg mb-3", t.preview)} />
-                      <div className={cn("flex items-center justify-center gap-1.5 text-sm font-medium", theme === t.id ? "text-primary" : "text-muted-foreground")}>
-                        {t.icon}{t.label}
-                      </div>
+                <h3 className="text-sm font-semibold text-white mb-3">Theme</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {[{value:"dark",label:"Dark",icon:<Moon className="w-5 h-5"/>},{value:"light",label:"Light",icon:<Sun className="w-5 h-5"/>}].map(t=>(
+                    <button key={t.value} onClick={()=>setAppearance({theme:t.value})}
+                      className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${appearance.theme===t.value?"border-cyan-400 bg-cyan-400/10":"border-border/30 hover:border-cyan-400/30"}`}>
+                      <span className={appearance.theme===t.value?"text-cyan-400":"text-muted-foreground"}>{t.icon}</span>
+                      <span className={`text-sm font-semibold ${appearance.theme===t.value?"text-white":"text-muted-foreground"}`}>{t.label}</span>
+                      {appearance.theme===t.value && <Check className="w-4 h-4 text-cyan-400 ml-auto"/>}
                     </button>
                   ))}
                 </div>
               </div>
-              <div>
-                <p className="text-sm font-semibold text-foreground mb-3">Accent Color</p>
-                <div className="flex gap-3">
-                  {[
-                    { id: "cyan", color: "bg-cyan-400", label: "Cyan" },
-                    { id: "violet", color: "bg-violet-500", label: "Violet" },
-                    { id: "green", color: "bg-green-400", label: "Green" },
-                    { id: "orange", color: "bg-orange-400", label: "Orange" },
-                    { id: "pink", color: "bg-pink-400", label: "Pink" },
-                  ].map(c => (
-                    <button key={c.id} onClick={() => setAccentColor(c.id)}
-                      className={cn("w-10 h-10 rounded-full transition-all", c.color, accentColor === c.id ? "ring-2 ring-offset-2 ring-offset-background ring-white scale-110" : "opacity-60 hover:opacity-100")}
-                      title={c.label} />
+              <div className="border-t border-border/30 pt-4">
+                <h3 className="text-sm font-semibold text-white mb-3">Density</h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {["Compact","Default","Comfortable"].map((d,i)=>(
+                    <button key={d} className={`px-3 py-2 rounded-xl text-xs font-medium border transition-all ${i===1?"border-cyan-400/30 bg-cyan-400/10 text-cyan-400":"border-border/30 text-muted-foreground hover:border-cyan-400/20"}`}>{d}</button>
                   ))}
                 </div>
               </div>
-              <div className="flex items-center justify-between border-t border-border/50 pt-5">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Compact Mode</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Reduce spacing for denser information display</p>
-                </div>
-                <Toggle value={compactMode} onChange={setCompactMode} />
-              </div>
-              <div className="flex justify-end"><button onClick={save} disabled={saving}
-                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-violet-600 text-white rounded-xl text-sm font-medium transition-all disabled:opacity-60">
-                {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                {saving ? "Saving..." : "Save Appearance"}
-              </button></div>
+              <button onClick={saveAppearance} disabled={saving} className="flex items-center gap-2 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-black font-bold px-5 py-2.5 rounded-xl transition-all">
+                {saving?<div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin"/>:<Save className="w-4 h-4"/>} Save Appearance
+              </button>
             </div>
           )}
 
-          {/* Advanced */}
-          {tab === "advanced" && (
-            <div className="p-6 space-y-6">
-              <h2 className="font-bold text-foreground">Advanced Settings</h2>
-              {[
-                { title: "Data Retention", desc: "How long to keep sensor readings and logs", options: ["7 days", "30 days", "90 days", "1 year", "Forever"], value: "30 days" },
-                { title: "API Rate Limit", desc: "Maximum API requests per minute per key", options: ["100/min", "500/min", "1000/min", "5000/min", "Unlimited"], value: "1000/min" },
-                { title: "Export Format Default", desc: "Default format when exporting data", options: ["CSV", "JSON", "Parquet", "Excel"], value: "CSV" },
-                { title: "Device Timeout", desc: "Mark device offline after being unreachable for", options: ["1 min", "5 min", "10 min", "30 min", "1 hour"], value: "10 min" },
-              ].map((setting, i) => (
-                <div key={i} className="flex items-center justify-between py-4 border-b border-border/30 last:border-0">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{setting.title}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{setting.desc}</p>
+          {activeTab === "advanced" && (
+            <div className="glass rounded-2xl p-6 space-y-5">
+              <h2 className="text-lg font-bold text-white">Advanced Settings</h2>
+              <div className="space-y-3">
+                {[
+                  {label:"Data Retention Period",desc:"How long to keep device telemetry",value:"90 days"},
+                  {label:"Export Format Default",desc:"Default format for data exports",value:"CSV"},
+                  {label:"Webhook Timeout",desc:"Max wait time for webhook responses",value:"30 seconds"},
+                  {label:"API Rate Limit",desc:"Max API requests per minute",value:"1,000 req/min"},
+                ].map((item,i)=>(
+                  <div key={i} className="flex items-center justify-between p-4 glass rounded-xl border border-border/30">
+                    <div><p className="text-sm font-semibold text-white">{item.label}</p><p className="text-xs text-muted-foreground">{item.desc}</p></div>
+                    <span className="text-xs font-mono text-cyan-400 bg-cyan-400/10 px-2 py-1 rounded">{item.value}</span>
                   </div>
-                  <select defaultValue={setting.value} className="bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60 transition-all ml-4">
-                    {setting.options.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
+                ))}
+              </div>
+              <div className="border-t border-border/30 pt-5">
+                <h3 className="text-sm font-semibold text-red-400 mb-3">Danger Zone</h3>
+                <div className="p-4 border border-red-400/20 rounded-xl bg-red-400/5">
+                  <p className="text-sm font-semibold text-white mb-1">Delete Account</p>
+                  <p className="text-xs text-muted-foreground mb-3">Permanently delete your account and all data. This cannot be undone.</p>
+                  <button className="text-xs bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-400/30 px-4 py-2 rounded-lg transition-all">
+                    Delete Account
+                  </button>
                 </div>
-              ))}
-              <div className="flex justify-end"><button onClick={save} disabled={saving}
-                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-violet-600 text-white rounded-xl text-sm font-medium transition-all disabled:opacity-60">
-                {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                {saving ? "Saving..." : "Save Settings"}
-              </button></div>
+              </div>
             </div>
           )}
         </div>

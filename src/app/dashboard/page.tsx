@@ -1,17 +1,13 @@
+import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { DashboardClient } from "./dashboard-client";
+import Client from "./dashboard-client";
 
-export const metadata = { title: "Dashboard" };
+export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+export default async function Page() {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
-  return (
-    <DashboardLayout>
-      <DashboardClient />
-    </DashboardLayout>
-  );
+  return <DashboardLayout><Client /></DashboardLayout>;
 }

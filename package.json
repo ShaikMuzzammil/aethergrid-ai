@@ -10,11 +10,13 @@
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts",
+    "db:seed": "prisma db seed",
     "db:migrate": "prisma migrate deploy",
     "type-check": "tsc --noEmit",
     "postinstall": "prisma generate",
-    "prebuild": "node -e \"try{require(\"fs\").rmSync(\"src/app/(auth)\",{recursive:true,force:true})}catch(e){};console.log(\"[prebuild] auth cleanup done\")\""
+    "prebuild": "node -e \"try{require(\"fs\").rmSync(\"src/app/(auth)\",{recursive:true,force:true})}catch(e){};console.log(\"[prebuild] auth cleanup done\")\"",
+    "db:reset": "prisma db push --force-reset && prisma db seed",
+    "build:clean": "rm -rf .next && next build"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",
@@ -78,6 +80,6 @@
     "autoprefixer": "^10.4.20"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
   }
 }

@@ -1,240 +1,227 @@
 "use client";
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Download, Plus, Search, RefreshCw, CheckCircle, XCircle,
-  FileText, Database, Code, Globe, File, Archive, X
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
+import { Download, Plus, X, Check, RefreshCw, FileText, Database, Trash2, Clock, CheckCircle, AlertCircle, Loader } from "lucide-react";
 
-const FORMAT_CATEGORIES = [
-  {
-    name: "Tabular", icon: <FileText className="w-4 h-4" />, color: "cyan",
-    formats: ["CSV", "Excel (.xlsx)", "ODS", "TSV", "Parquet", "ORC", "Avro"],
-  },
-  {
-    name: "JSON-Based", icon: <Code className="w-4 h-4" />, color: "yellow",
-    formats: ["JSON", "JSONL", "NDJSON", "GeoJSON"],
-  },
-  {
-    name: "Database", icon: <Database className="w-4 h-4" />, color: "violet",
-    formats: ["SQLite", "PostgreSQL Dump", "MySQL Dump", "MongoDB BSON"],
-  },
-  {
-    name: "Document", icon: <File className="w-4 h-4" />, color: "green",
-    formats: ["PDF Report", "HTML", "Markdown", "LaTeX", "RTF", "DOCX"],
-  },
-  {
-    name: "Serialization", icon: <Archive className="w-4 h-4" />, color: "orange",
-    formats: ["Protocol Buffers", "MessagePack", "CBOR", "YAML", "TOML"],
-  },
-  {
-    name: "Geospatial", icon: <Globe className="w-4 h-4" />, color: "blue",
-    formats: ["Shapefile", "KML", "GPX", "WKT", "WKB"],
-  },
-];
+const DATA_TYPES = ["devices","models","deployments","automations"] as const;
+const FORMATS = ["CSV","JSON","XLSX"] as const;
+const FORMAT_ICONS: Record<string,string> = { CSV:"📊", JSON:"📋", XLSX:"📗" };
+const TYPE_ICONS: Record<string,string> = { devices:"💻", models:"🧠", deployments:"🚀", automations:"⚡" };
+const TYPE_LABELS: Record<string,string> = { devices:"IoT Devices", models:"AI Models", deployments:"Deployments", automations:"Automations" };
 
-const DATA_SOURCES = ["Device Telemetry", "Sensor Readings", "AI Model Metrics", "Inference Logs", "Audit Logs", "Deployment Metrics", "Alert History", "API Usage"];
-
-const MOCK_EXPORTS = [
-  { id: "e1", name: "telemetry_jan_2025", format: "CSV", status: "COMPLETED", size: "2.4 GB", rows: 4820000, created: "2h ago" },
-  { id: "e2", name: "model_metrics_q4", format: "Excel (.xlsx)", status: "COMPLETED", size: "18.2 MB", rows: 24500, created: "1d ago" },
-  { id: "e3", name: "device_audit_export", format: "JSON", status: "PROCESSING", size: "—", rows: null, created: "5m ago" },
-  { id: "e4", name: "inference_logs_jan", format: "Parquet", status: "COMPLETED", size: "890 MB", rows: 1200000, created: "3d ago" },
-  { id: "e5", name: "geo_device_locations", format: "GeoJSON", status: "FAILED", size: "—", rows: null, created: "6h ago" },
-];
-
-function NewExportModal({ onClose }: { onClose: () => void }) {
-  const [selected, setSelected] = useState<string | null>(null);
-  const [source, setSource] = useState(DATA_SOURCES[0]);
-  const [dateRange, setDateRange] = useState("last_7_days");
-  const [_exporting, setExporting] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [step, setStep] = useState<"config" | "running">("config");
-
-  async function startExport() {
-    if (!selected) return;
-    setStep("running"); setExporting(true);
-    for (let i = 0; i <= 100; i += 5) {
-      await new Promise(r => setTimeout(r, 80));
-      setProgress(i);
-    }
-    toast.success(`Export to ${selected} completed!`);
-    setExporting(false); onClose();
-  }
-
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95 }}
-        className="w-full max-w-2xl glass rounded-2xl border border-border/60 shadow-2xl max-h-[90vh] overflow-auto">
-        <div className="flex items-center justify-between p-6 border-b border-border/50 sticky top-0 bg-card/80 backdrop-blur-md z-10">
-          <h2 className="font-bold text-foreground">New Export</h2>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-muted/50 text-muted-foreground"><X className="w-4 h-4" /></button>
-        </div>
-        <div className="p-6">
-          {step === "config" ? (
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Data Source</label>
-                  <select value={source} onChange={e => setSource(e.target.value)}
-                    className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary/60 transition-all">
-                    {DATA_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Date Range</label>
-                  <select value={dateRange} onChange={e => setDateRange(e.target.value)}
-                    className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary/60 transition-all">
-                    {["last_1_hour", "last_24_hours", "last_7_days", "last_30_days", "last_90_days", "custom"].map(r => <option key={r} value={r}>{r.replace(/_/g, " ")}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-foreground mb-3">Select Export Format</p>
-                <div className="space-y-4">
-                  {FORMAT_CATEGORIES.map(cat => (
-                    <div key={cat.name}>
-                      <div className={cn("flex items-center gap-2 text-xs font-semibold mb-2 uppercase tracking-wider", `text-${cat.color}-400`)}>
-                        {cat.icon} {cat.name}
-                      </div>
-                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                        {cat.formats.map(fmt => (
-                          <button key={fmt} onClick={() => setSelected(fmt)}
-                            className={cn("px-3 py-2 rounded-lg text-xs font-medium border transition-all text-left", selected === fmt ? `border-${cat.color}-400/60 bg-${cat.color}-400/10 text-${cat.color}-400` : "border-border/50 text-muted-foreground hover:border-border hover:bg-muted/30 hover:text-foreground")}>
-                            {selected === fmt && <span className="mr-1">✓</span>}{fmt}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {selected && (
-                <div className="glass rounded-xl p-4 border border-primary/20 bg-primary/5">
-                  <p className="text-xs text-muted-foreground mb-1">Selected format</p>
-                  <p className="text-sm font-bold text-primary">{selected}</p>
-                  <p className="text-xs text-muted-foreground mt-1">Estimated size: ~2.1 GB · ~4.2M rows</p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="py-8 space-y-6 text-center">
-              <div className="w-16 h-16 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center mx-auto">
-                {progress < 100 ? <RefreshCw className="w-8 h-8 text-primary animate-spin" /> : <CheckCircle className="w-8 h-8 text-green-400" />}
-              </div>
-              <div>
-                <p className="font-bold text-foreground">{progress < 100 ? `Exporting to ${selected}...` : "Export Complete!"}</p>
-                <p className="text-sm text-muted-foreground mt-1">{progress < 100 ? "Processing your data..." : "Your file is ready to download."}</p>
-              </div>
-              <div>
-                <div className="flex justify-between text-xs mb-2 px-8">
-                  <span className="text-muted-foreground">Progress</span>
-                  <span className="text-primary font-medium">{progress}%</span>
-                </div>
-                <div className="h-3 bg-muted rounded-full mx-8 overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-cyan-500 to-violet-600 rounded-full transition-all duration-200" style={{ width: `${progress}%` }} />
-                </div>
-              </div>
-              <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
-                <span>~4.2M rows processed</span><span>·</span><span>~2.1 GB</span>
-              </div>
-            </div>
-          )}
-        </div>
-        <div className="flex items-center justify-between p-6 border-t border-border/50 sticky bottom-0 bg-card/80 backdrop-blur-md">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Cancel</button>
-          {step === "config" && (
-            <button onClick={startExport} disabled={!selected}
-              className="px-6 py-2 bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-400 hover:to-violet-500 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-60 flex items-center gap-2">
-              <Download className="w-4 h-4" /> Start Export
-            </button>
-          )}
-        </div>
-      </motion.div>
-    </motion.div>
-  );
+interface ExportJob {
+  id:string; name:string; format:string; dataType:string; status:string;
+  rowCount?:number; fileSize?:number; fileUrl?:string; createdAt:string; completedAt?:string;
 }
 
-export function ExportClient() {
-  const [search, setSearch] = useState("");
+function fmtSize(b?:number) {
+  if (!b) return "—";
+  if (b>1e6) return `${(b/1e6).toFixed(1)} MB`;
+  if (b>1e3) return `${(b/1e3).toFixed(0)} KB`;
+  return `${b} B`;
+}
+
+export default function ExportClient() {
+  const [jobs, setJobs] = useState<ExportJob[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ name:"", format:"CSV" as typeof FORMATS[number], dataType:"devices" as typeof DATA_TYPES[number] });
+  const pollRef = useRef<ReturnType<typeof setInterval>|null>(null);
 
-  const filtered = MOCK_EXPORTS.filter(e => e.name.toLowerCase().includes(search.toLowerCase()) || e.format.toLowerCase().includes(search.toLowerCase()));
+  const fetchJobs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/export");
+      const data = await res.json();
+      setJobs(data.jobs||[]);
+    } catch { toast.error("Failed to load exports"); }
+    finally { setLoading(false); }
+  }, []);
 
-  function statusIcon(status: string) {
-    if (status === "COMPLETED") return <CheckCircle className="w-4 h-4 text-green-400" />;
-    if (status === "PROCESSING") return <RefreshCw className="w-4 h-4 text-blue-400 animate-spin" />;
-    return <XCircle className="w-4 h-4 text-red-400" />;
-  }
+  useEffect(() => {
+    fetchJobs();
+    // poll for processing jobs
+    pollRef.current = setInterval(() => {
+      setJobs(prev => {
+        if (prev.some(j=>j.status==="PROCESSING")) { fetchJobs(); }
+        return prev;
+      });
+    }, 3000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [fetchJobs]);
+
+  const handleCreate = async () => {
+    if (!form.name.trim()) { toast.error("Export name is required"); return; }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(form)});
+      if (!res.ok) throw new Error((await res.json()).error||"Failed");
+      toast.success("Export job queued — processing...");
+      setShowNew(false);
+      setForm({ name:"", format:"CSV", dataType:"devices" });
+      fetchJobs();
+    } catch (e:any) { toast.error(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const handleDownload = async (job:ExportJob) => {
+    if (job.status!=="COMPLETED") { toast.error("Export not ready yet"); return; }
+    try {
+      const res = await fetch(`/api/export/${job.id}/download`);
+      if (!res.ok) throw new Error("Download failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href=url;
+      a.download = `${job.name.toLowerCase().replace(/\s+/g,"-")}.${job.format.toLowerCase()}`;
+      a.click(); URL.revokeObjectURL(url);
+      toast.success("Download started!");
+    } catch { toast.error("Download failed"); }
+  };
+
+  const handleDelete = async (id:string) => {
+    try {
+      await fetch(`/api/export/${id}`,{method:"DELETE"});
+      toast.success("Export deleted");
+      fetchJobs();
+    } catch { toast.error("Failed to delete"); }
+  };
+
+  const statusIcon = (s:string) => {
+    if (s==="COMPLETED") return <CheckCircle className="w-4 h-4 text-green-400"/>;
+    if (s==="FAILED") return <AlertCircle className="w-4 h-4 text-red-400"/>;
+    if (s==="PROCESSING") return <Loader className="w-4 h-4 text-amber-400 animate-spin"/>;
+    return <Clock className="w-4 h-4 text-muted-foreground"/>;
+  };
+
+  const statusColor = (s:string) => ({
+    COMPLETED:"text-green-400 bg-green-400/10", FAILED:"text-red-400 bg-red-400/10",
+    PROCESSING:"text-amber-400 bg-amber-400/10", PENDING:"text-slate-400 bg-slate-400/10"
+  }[s]||"text-muted-foreground bg-muted/20");
 
   return (
-    <div className="space-y-6">
-      <AnimatePresence>{showNew && <NewExportModal onClose={() => setShowNew(false)} />}</AnimatePresence>
-
-      <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-bold text-foreground">Export Center</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">30+ formats · Scheduled reports · API streaming</p></div>
-        <button onClick={() => setShowNew(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-400 hover:to-violet-500 text-white rounded-lg text-sm font-medium transition-all shadow-[0_0_20px_rgba(0,212,255,0.2)]">
-          <Plus className="w-4 h-4" /> New Export
-        </button>
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-black text-white">Data Export</h1>
+          <p className="text-sm text-muted-foreground mt-1">Export your fleet data to CSV, JSON, or XLSX</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={fetchJobs} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-white border border-border/50 px-3 py-2 rounded-lg transition-all">
+            <RefreshCw className="w-3.5 h-3.5"/> Refresh
+          </button>
+          <button onClick={()=>setShowNew(true)} className="flex items-center gap-2 text-xs bg-cyan-500 hover:bg-cyan-400 text-black font-bold px-4 py-2 rounded-lg transition-all">
+            <Plus className="w-3.5 h-3.5"/> New Export
+          </button>
+        </div>
       </div>
 
-      {/* Format overview */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {FORMAT_CATEGORIES.map(cat => (
-          <div key={cat.name} className={cn("glass rounded-xl p-4 glow-border text-center cursor-pointer hover:-translate-y-0.5 transition-all")}
-            onClick={() => setShowNew(true)}>
-            <div className={cn("w-8 h-8 rounded-lg mx-auto flex items-center justify-center mb-2", `bg-${cat.color}-400/15 text-${cat.color}-400`)}>
-              {cat.icon}
-            </div>
-            <p className="text-xs font-medium text-foreground">{cat.name}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{cat.formats.length} formats</p>
-          </div>
+      {/* Quick export tiles */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {DATA_TYPES.map(type=>(
+          <button key={type} onClick={()=>{setForm({name:`${TYPE_LABELS[type]} Export`,format:"CSV",dataType:type});setShowNew(true)}}
+            className="glass rounded-xl p-4 glow-border hover:border-cyan-400/40 transition-all text-left group">
+            <div className="text-2xl mb-2">{TYPE_ICONS[type]}</div>
+            <p className="text-sm font-bold text-white group-hover:text-cyan-400 transition-colors">{TYPE_LABELS[type]}</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Quick CSV export</p>
+          </button>
         ))}
       </div>
 
-      {/* Recent exports */}
-      <div className="glass rounded-2xl glow-border overflow-hidden">
-        <div className="flex items-center justify-between p-5 border-b border-border/50">
-          <h3 className="font-semibold text-foreground">Recent Exports</h3>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
-              className="bg-muted/30 border border-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/60 transition-all" />
+      {/* Jobs */}
+      <div>
+        <h2 className="text-sm font-bold text-white mb-3 flex items-center gap-2"><Database className="w-4 h-4 text-cyan-400"/> Export History</h2>
+        {loading ? (
+          <div className="space-y-3">{Array(3).fill(0).map((_,i)=><div key={i} className="glass rounded-2xl p-5 animate-pulse h-20"/>)}</div>
+        ) : jobs.length===0 ? (
+          <div className="text-center py-12 glass rounded-2xl">
+            <Download className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30"/>
+            <p className="text-white font-semibold mb-1">No exports yet</p>
+            <p className="text-sm text-muted-foreground">Create your first export to download your fleet data</p>
           </div>
-        </div>
-        <table className="w-full text-sm">
-          <thead><tr className="border-b border-border/30">
-            {["Export Name", "Format", "Status", "Size", "Rows", "Created", "Actions"].map(h => (
-              <th key={h} className="text-left text-xs font-medium text-muted-foreground px-5 py-3">{h}</th>
-            ))}</tr></thead>
-          <tbody>
-            {filtered.map((exp, i) => (
-              <motion.tr key={exp.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
-                className="data-table-row">
-                <td className="px-5 py-3 font-medium text-foreground">{exp.name}</td>
-                <td className="px-5 py-3"><span className="text-xs px-2 py-0.5 rounded-md bg-muted/50 border border-border/50 text-muted-foreground">{exp.format}</span></td>
-                <td className="px-5 py-3"><div className="flex items-center gap-1.5">{statusIcon(exp.status)}<span className="text-xs text-muted-foreground">{exp.status}</span></div></td>
-                <td className="px-5 py-3 text-muted-foreground text-xs">{exp.size}</td>
-                <td className="px-5 py-3 text-muted-foreground text-xs">{exp.rows ? exp.rows.toLocaleString() : "—"}</td>
-                <td className="px-5 py-3 text-muted-foreground text-xs">{exp.created}</td>
-                <td className="px-5 py-3">
-                  {exp.status === "COMPLETED" && (
-                    <button onClick={() => toast.success("Download started!")}
-                      className="flex items-center gap-1.5 text-xs text-primary hover:underline">
-                      <Download className="w-3 h-3" /> Download
+        ) : (
+          <div className="space-y-3">
+            {jobs.map(job=>(
+              <div key={job.id} className="glass rounded-2xl p-4 glow-border flex items-center gap-4 flex-wrap">
+                <div className="w-9 h-9 rounded-xl bg-muted/30 flex items-center justify-center text-lg shrink-0">
+                  {FORMAT_ICONS[job.format]||"📄"}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-bold text-white">{job.name}</p>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full flex items-center gap-1 ${statusColor(job.status)}`}>
+                      {statusIcon(job.status)} {job.status}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground flex-wrap">
+                    <span>{TYPE_ICONS[job.dataType]} {TYPE_LABELS[job.dataType]}</span>
+                    <span>·</span>
+                    <span>{job.format}</span>
+                    {job.rowCount && <span>· {job.rowCount.toLocaleString()} rows</span>}
+                    {job.fileSize && <span>· {fmtSize(job.fileSize)}</span>}
+                    <span>· <Clock className="w-3 h-3 inline mr-0.5"/>{new Date(job.createdAt).toLocaleString()}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {job.status==="COMPLETED" && (
+                    <button onClick={()=>handleDownload(job)} className="flex items-center gap-1.5 text-[10px] font-semibold text-cyan-400 border border-cyan-400/30 hover:border-cyan-400/60 bg-cyan-400/5 hover:bg-cyan-400/10 px-3 py-1.5 rounded-lg transition-all">
+                      <Download className="w-3 h-3"/> Download
                     </button>
                   )}
-                </td>
-              </motion.tr>
+                  <button onClick={()=>handleDelete(job.id)} className="p-1.5 text-red-400/50 hover:text-red-400 transition-all"><Trash2 className="w-3.5 h-3.5"/></button>
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        )}
       </div>
+
+      {/* New Export Modal */}
+      {showNew && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={()=>setShowNew(false)}/>
+          <div className="relative glass border border-border/50 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <div><h2 className="text-xl font-black text-white">New Export</h2><p className="text-xs text-muted-foreground mt-1">Choose data type and format</p></div>
+              <button onClick={()=>setShowNew(false)} className="p-2 hover:bg-muted/30 rounded-lg"><X className="w-4 h-4 text-muted-foreground"/></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground mb-1 block">Export Name *</label>
+                <input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="e.g. Device Fleet Export"
+                  className="w-full px-3 py-2.5 bg-muted/30 border border-border/50 rounded-xl text-sm text-white placeholder:text-muted-foreground focus:outline-none focus:border-cyan-400/50"/>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground mb-2 block">Data Type</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {DATA_TYPES.map(t=>(
+                    <button key={t} onClick={()=>setForm(p=>({...p,dataType:t}))}
+                      className={`flex items-center gap-2 p-3 rounded-xl border-2 transition-all ${form.dataType===t?"border-cyan-400 bg-cyan-400/10":"border-border/30 hover:border-cyan-400/30"}`}>
+                      <span className="text-base">{TYPE_ICONS[t]}</span>
+                      <span className={`text-xs font-semibold ${form.dataType===t?"text-white":"text-muted-foreground"}`}>{TYPE_LABELS[t]}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground mb-2 block">Format</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {FORMATS.map(f=>(
+                    <button key={f} onClick={()=>setForm(p=>({...p,format:f}))}
+                      className={`flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all ${form.format===f?"border-cyan-400 bg-cyan-400/10":"border-border/30 hover:border-cyan-400/30"}`}>
+                      <span className="text-base">{FORMAT_ICONS[f]}</span>
+                      <span className={`text-xs font-bold ${form.format===f?"text-white":"text-muted-foreground"}`}>{f}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button onClick={handleCreate} disabled={saving}
+                className="w-full bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-black font-bold py-3 rounded-xl flex items-center justify-center gap-2">
+                {saving?<><div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin"/>Queuing...</>:<><Download className="w-4 h-4"/>Start Export</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

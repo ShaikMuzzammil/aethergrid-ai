@@ -1,462 +1,354 @@
 "use client";
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import {
-  Brain, Plus, Search, Upload, Play, Pause, RefreshCw, X, Check,
-  Cpu, Zap, Activity, TrendingUp, Download, Copy, ChevronRight,
-  Eye, Trash2, Settings, AlertTriangle, Clock, Award, BarChart2,
-  Layers, Code, FlaskConical, Rocket
-} from "lucide-react";
-import { cn, getStatusColor } from "@/lib/utils";
+import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
+import { Brain, Plus, Search, Upload, X, Check, ChevronRight, Zap, Cpu, HardDrive, Activity, Trash2, RefreshCw, Play, Archive } from "lucide-react";
 
-const FRAMEWORKS = ["TENSORFLOW", "PYTORCH", "ONNX", "TFLITE", "OPENVINO", "CUSTOM"];
-const MODEL_TYPES = ["OBJECT_DETECTION", "IMAGE_SEGMENTATION", "CLASSIFICATION", "ANOMALY_DETECTION", "NLP", "TIME_SERIES", "RECOMMENDATION", "GENERATIVE"];
+const MODEL_TYPES = ["OBJECT_DETECTION","IMAGE_SEGMENTATION","CLASSIFICATION","ANOMALY_DETECTION","NLP","TIME_SERIES","RECOMMENDATION","GENERATIVE"] as const;
+const FRAMEWORKS = ["TENSORFLOW","PYTORCH","ONNX","TFLITE","OPENVINO","CUSTOM"] as const;
+const STATUSES = ["ALL","DRAFT","TRAINING","TRAINED","DEPLOYED","ARCHIVED"] as const;
 
-const MOCK_MODELS = [
-  { id: "m1", name: "YOLOv8 Edge Detector", version: "2.1.0", type: "OBJECT_DETECTION", framework: "TFLITE", status: "DEPLOYED", accuracy: 94.2, size: 6.4, latency: 28, devices: 128, requests: 1842000, tags: ["production", "vision"], createdAt: new Date(Date.now() - 30 * 86400000) },
-  { id: "m2", name: "Anomaly Sentinel", version: "1.3.2", type: "ANOMALY_DETECTION", framework: "ONNX", status: "DEPLOYED", accuracy: 91.8, size: 12.1, latency: 12, devices: 64, requests: 4520000, tags: ["monitoring"], createdAt: new Date(Date.now() - 45 * 86400000) },
-  { id: "m3", name: "NLP Intent Classifier", version: "3.0.0", type: "NLP", framework: "PYTORCH", status: "DEPLOYED", accuracy: 88.5, size: 45.2, latency: 45, devices: 32, requests: 890000, tags: ["nlp", "beta"], createdAt: new Date(Date.now() - 15 * 86400000) },
-  { id: "m4", name: "TS Forecaster Pro", version: "1.0.1", type: "TIME_SERIES", framework: "TENSORFLOW", status: "TRAINING", accuracy: 86.3, size: 8.8, latency: 65, devices: 0, requests: 0, tags: ["forecasting"], createdAt: new Date(Date.now() - 3 * 86400000) },
-  { id: "m5", name: "MobileNet Classifier", version: "4.0.0", type: "CLASSIFICATION", framework: "TFLITE", status: "TRAINED", accuracy: 92.1, size: 3.2, latency: 8, devices: 0, requests: 0, tags: ["mobile", "edge"], createdAt: new Date(Date.now() - 7 * 86400000) },
-  { id: "m6", name: "Recommendation Engine", version: "2.0.0", type: "RECOMMENDATION", framework: "ONNX", status: "DRAFT", accuracy: null, size: 22.5, latency: null, devices: 0, requests: 0, tags: ["reco"], createdAt: new Date(Date.now() - 1 * 86400000) },
-];
+const TYPE_LABELS: Record<string, string> = {
+  OBJECT_DETECTION:"Object Detection",IMAGE_SEGMENTATION:"Image Segmentation",CLASSIFICATION:"Classification",
+  ANOMALY_DETECTION:"Anomaly Detection",NLP:"NLP",TIME_SERIES:"Time Series",
+  RECOMMENDATION:"Recommendation",GENERATIVE:"Generative",
+};
 
-const TRAINING_HISTORY = Array.from({ length: 20 }, (_, i) => ({
-  epoch: i + 1,
-  loss: Math.max(0.05, 0.9 - i * 0.04 + Math.random() * 0.05),
-  val_loss: Math.max(0.08, 0.95 - i * 0.04 + Math.random() * 0.07),
-  accuracy: Math.min(98, 50 + i * 2.2 + Math.random() * 3),
-}));
-
-const TYPE_ICONS: Record<string, string> = {
-  OBJECT_DETECTION: "👁️", IMAGE_SEGMENTATION: "🎭", CLASSIFICATION: "🏷️",
-  ANOMALY_DETECTION: "🔍", NLP: "💬", TIME_SERIES: "📈",
-  RECOMMENDATION: "⭐", GENERATIVE: "✨",
+const STATUS_COLORS: Record<string, string> = {
+  DRAFT:"text-slate-400 bg-slate-400/10",TRAINING:"text-amber-400 bg-amber-400/10",
+  TRAINED:"text-blue-400 bg-blue-400/10",DEPLOYED:"text-green-400 bg-green-400/10",
+  ARCHIVED:"text-muted-foreground bg-muted/20",
 };
 
 const FRAMEWORK_COLORS: Record<string, string> = {
-  TENSORFLOW: "text-orange-400 bg-orange-400/10 border-orange-400/20",
-  PYTORCH: "text-red-400 bg-red-400/10 border-red-400/20",
-  ONNX: "text-blue-400 bg-blue-400/10 border-blue-400/20",
-  TFLITE: "text-yellow-400 bg-yellow-400/10 border-yellow-400/20",
-  OPENVINO: "text-violet-400 bg-violet-400/10 border-violet-400/20",
-  CUSTOM: "text-slate-400 bg-slate-400/10 border-slate-400/20",
+  TENSORFLOW:"text-orange-400",PYTORCH:"text-red-400",ONNX:"text-purple-400",
+  TFLITE:"text-green-400",OPENVINO:"text-blue-400",CUSTOM:"text-cyan-400",
 };
 
-function UploadModelModal({ onClose }: { onClose: () => void }) {
-  const [step, setStep] = useState(1);
-  const [form, setForm] = useState({ name: "", type: "CLASSIFICATION", framework: "TFLITE", description: "" });
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [dragging, setDragging] = useState(false);
-  const [fileName, setFileName] = useState("");
-
-  async function handleDrop(e: React.DragEvent) {
-    e.preventDefault(); setDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) { setFileName(file.name); simulateUpload(); }
-  }
-
-  async function simulateUpload() {
-    setUploading(true);
-    for (let i = 0; i <= 100; i += 10) {
-      await new Promise(r => setTimeout(r, 120));
-      setUploadProgress(i);
-    }
-    setUploading(false);
-  }
-
-  async function handleCreate() {
-    setUploading(true);
-    await new Promise(r => setTimeout(r, 1000));
-    toast.success(`Model "${form.name}" created successfully!`);
-    setUploading(false); onClose();
-  }
-
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
-        className="w-full max-w-xl glass rounded-2xl border border-border/60 shadow-2xl">
-        <div className="flex items-center justify-between p-6 border-b border-border/50">
-          <div><h2 className="font-bold text-foreground">Upload AI Model</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Step {step} of 3</p></div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-muted/50 text-muted-foreground"><X className="w-4 h-4" /></button>
-        </div>
-        <div className="flex px-6 pt-4 gap-2">
-          {[1, 2, 3].map(s => <div key={s} className={cn("flex-1 h-1 rounded-full transition-all", s <= step ? "bg-primary" : "bg-muted")} />)}
-        </div>
-        <div className="p-6 space-y-4">
-          {step === 1 && (
-            <>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Model Name</label>
-                <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g. YOLOv8 Edge Detector v3"
-                  className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/60 transition-all" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Model Type</label>
-                  <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
-                    className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary/60 transition-all">
-                    {MODEL_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Framework</label>
-                  <select value={form.framework} onChange={e => setForm(f => ({ ...f, framework: e.target.value }))}
-                    className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary/60 transition-all">
-                    {FRAMEWORKS.map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Description</label>
-                <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                  placeholder="Describe your model's purpose and capabilities..."
-                  rows={3}
-                  className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/60 transition-all resize-none" />
-              </div>
-            </>
-          )}
-          {step === 2 && (
-            <>
-              <p className="text-sm font-medium text-foreground mb-2">Upload Model File</p>
-              <div
-                onDragOver={e => { e.preventDefault(); setDragging(true); }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={handleDrop}
-                className={cn("border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer", dragging ? "border-primary bg-primary/5" : "border-border/50 hover:border-primary/40")}>
-                {fileName ? (
-                  <div className="flex items-center justify-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-green-400/10 flex items-center justify-center"><Check className="w-5 h-5 text-green-400" /></div>
-                    <div className="text-left">
-                      <p className="text-sm font-medium text-foreground">{fileName}</p>
-                      <p className="text-xs text-green-400">Upload complete</p>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <Upload className="w-10 h-10 text-muted-foreground/50 mx-auto mb-3" />
-                    <p className="text-sm font-medium text-foreground">Drop your model file here</p>
-                    <p className="text-xs text-muted-foreground mt-1">Supports .tflite, .onnx, .pt, .h5, .pb (max 2GB)</p>
-                    <label className="mt-4 inline-block cursor-pointer px-4 py-2 rounded-lg border border-border text-xs text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all">
-                      Browse Files <input type="file" className="hidden" onChange={e => { if (e.target.files?.[0]) { setFileName(e.target.files[0].name); simulateUpload(); } }} />
-                    </label>
-                  </>
-                )}
-              </div>
-              {uploading && (
-                <div>
-                  <div className="flex justify-between text-xs mb-1.5"><span className="text-muted-foreground">Uploading...</span><span className="text-primary">{uploadProgress}%</span></div>
-                  <div className="h-2 bg-muted rounded-full"><div className="h-full bg-gradient-to-r from-cyan-500 to-violet-600 rounded-full transition-all" style={{ width: `${uploadProgress}%` }} /></div>
-                </div>
-              )}
-            </>
-          )}
-          {step === 3 && (
-            <>
-              <p className="text-sm font-medium text-foreground mb-3">Configuration</p>
-              <div className="space-y-3">
-                {[
-                  { label: "Optimization", options: ["None", "Quantization (INT8)", "Quantization (FP16)", "Pruning", "Knowledge Distillation"], desc: "Reduce model size for edge deployment" },
-                  { label: "Target Hardware", options: ["CPU (Generic)", "GPU", "NPU", "DSP", "FPGA", "TPU"], desc: "Optimize for specific processor" },
-                  { label: "Batch Size", options: ["1", "4", "8", "16", "32"], desc: "Inference batch size" },
-                ].map(cfg => (
-                  <div key={cfg.label} className="glass rounded-xl p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <div><p className="text-sm font-medium text-foreground">{cfg.label}</p>
-                        <p className="text-xs text-muted-foreground">{cfg.desc}</p></div>
-                    </div>
-                    <select className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60 transition-all">
-                      {cfg.options.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-        <div className="flex items-center justify-between p-6 border-t border-border/50">
-          <button onClick={() => step > 1 ? setStep(s => s - 1) : onClose()}
-            className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
-            {step > 1 ? "Back" : "Cancel"}
-          </button>
-          <button onClick={() => step < 3 ? setStep(s => s + 1) : handleCreate()}
-            disabled={uploading || (step === 1 && !form.name)}
-            className="px-6 py-2 bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-400 hover:to-violet-500 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-60 flex items-center gap-2">
-            {uploading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-            {step < 3 ? "Next" : uploading ? "Creating..." : "Create Model"}
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
-  );
+interface AIModel {
+  id:string; name:string; version:string; type:string; framework:string;
+  description?:string; accuracy?:number; size?:number; latency?:number;
+  status:string; tags:string[]; createdAt:string; updatedAt:string;
+  trainingJobs?:Array<{status:string;progress:number}>;
+  _count?:{inferenceRequests:number;deployments:number};
 }
 
-function ModelDetailPanel({ model, onClose }: { model: typeof MOCK_MODELS[0]; onClose: () => void }) {
-  const [activeTab, setActiveTab] = useState<"overview" | "training" | "inference" | "deploy">("overview");
-  const [inferenceInput, setInferenceInput] = useState('{"image": "base64_encoded_image_data"}');
-  const [inferenceOutput, setInferenceOutput] = useState("");
-  const [inferring, setInferring] = useState(false);
-
-  async function runInference() {
-    setInferring(true);
-    await new Promise(r => setTimeout(r, 1500));
-    setInferenceOutput(JSON.stringify({
-      predictions: [{ label: "object_1", confidence: 0.94, bbox: [120, 45, 380, 290] }, { label: "object_2", confidence: 0.87, bbox: [400, 100, 600, 350] }],
-      latency_ms: 28.4, model_version: model.version, timestamp: new Date().toISOString()
-    }, null, 2));
-    setInferring(false);
-  }
-
-  const tabs = [{ id: "overview", label: "Overview", icon: <Eye className="w-3.5 h-3.5" /> }, { id: "training", label: "Training", icon: <Activity className="w-3.5 h-3.5" /> }, { id: "inference", label: "Playground", icon: <FlaskConical className="w-3.5 h-3.5" /> }, { id: "deploy", label: "Deploy", icon: <Rocket className="w-3.5 h-3.5" /> }];
-
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-start justify-end p-4 bg-black/50 backdrop-blur-sm"
-      onClick={onClose}>
-      <motion.div initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
-        transition={{ type: "spring", damping: 25, stiffness: 200 }}
-        className="w-full max-w-xl h-full overflow-y-auto glass border border-border/60 rounded-2xl shadow-2xl"
-        onClick={e => e.stopPropagation()}>
-        <div className="p-5 border-b border-border/50">
-          <div className="flex items-start justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-xl bg-violet-500/15 border border-violet-500/30 flex items-center justify-center text-2xl">{TYPE_ICONS[model.type]}</div>
-              <div>
-                <h2 className="font-bold text-foreground text-sm">{model.name}</h2>
-                <p className="text-xs text-muted-foreground">v{model.version} · {model.type.replace(/_/g, " ")}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={cn("text-xs px-2 py-0.5 rounded-full border font-medium", getStatusColor(model.status), "border-current/20")}>{model.status}</span>
-              <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted/50 text-muted-foreground"><X className="w-4 h-4" /></button>
-            </div>
-          </div>
-          <div className="flex gap-1">
-            {tabs.map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
-                className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all", activeTab === tab.id ? "bg-primary/20 text-primary border border-primary/30" : "text-muted-foreground hover:text-foreground hover:bg-muted/50")}>
-                {tab.icon}{tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="p-5">
-          {activeTab === "overview" && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: "Accuracy", value: model.accuracy ? `${model.accuracy}%` : "—", color: "text-green-400" },
-                  { label: "Avg Latency", value: model.latency ? `${model.latency}ms` : "—", color: "text-cyan-400" },
-                  { label: "Model Size", value: `${model.size} MB`, color: "text-violet-400" },
-                  { label: "Deployments", value: model.devices, color: "text-blue-400" },
-                  { label: "Total Requests", value: model.requests > 1000 ? `${(model.requests / 1000000).toFixed(1)}M` : model.requests, color: "text-yellow-400" },
-                  { label: "Framework", value: model.framework, color: "text-orange-400" },
-                ].map((m, i) => (
-                  <div key={i} className="glass rounded-xl p-3">
-                    <p className="text-xs text-muted-foreground">{m.label}</p>
-                    <p className={cn("text-base font-bold mt-0.5", m.color)}>{m.value}</p>
-                  </div>
-                ))}
-              </div>
-              {model.accuracy && (
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-2">Accuracy Score</p>
-                  <div className="h-3 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-cyan-500 to-green-400 rounded-full" style={{ width: `${model.accuracy}%` }} />
-                  </div>
-                  <div className="flex justify-between text-xs text-muted-foreground mt-1"><span>0%</span><span className="text-green-400 font-medium">{model.accuracy}%</span><span>100%</span></div>
-                </div>
-              )}
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-2">Tags</p>
-                <div className="flex flex-wrap gap-2">{model.tags.map(tag => (<span key={tag} className="text-xs px-2.5 py-1 rounded-full bg-muted/50 border border-border/50 text-muted-foreground">#{tag}</span>))}</div>
-              </div>
-            </div>
-          )}
-          {activeTab === "training" && (
-            <div className="space-y-4">
-              <p className="text-sm font-medium text-foreground">Training Progress</p>
-              <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={TRAINING_HISTORY}>
-                  <defs>
-                    <linearGradient id="lossGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#EF4444" stopOpacity={0.3} /><stop offset="95%" stopColor="#EF4444" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="epoch" tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={{ background: "#111827", border: "1px solid #374151", borderRadius: "8px", fontSize: "11px" }} />
-                  <Area type="monotone" dataKey="loss" name="Loss" stroke="#EF4444" fill="url(#lossGrad)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="val_loss" name="Val Loss" stroke="#F59E0B" fill="none" strokeWidth={2} strokeDasharray="4 4" />
-                </AreaChart>
-              </ResponsiveContainer>
-              <ResponsiveContainer width="100%" height={140}>
-                <AreaChart data={TRAINING_HISTORY}>
-                  <defs>
-                    <linearGradient id="accGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.3} /><stop offset="95%" stopColor="#10B981" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="epoch" tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} domain={[50, 100]} />
-                  <Tooltip contentStyle={{ background: "#111827", border: "1px solid #374151", borderRadius: "8px", fontSize: "11px" }} />
-                  <Area type="monotone" dataKey="accuracy" name="Accuracy %" stroke="#10B981" fill="url(#accGrad)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-          {activeTab === "inference" && (
-            <div className="space-y-4">
-              <p className="text-sm font-medium text-foreground">Live Inference Playground</p>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1.5 block">Input Payload (JSON)</label>
-                <textarea value={inferenceInput} onChange={e => setInferenceInput(e.target.value)} rows={5}
-                  className="w-full bg-muted/30 border border-border rounded-xl p-3 text-xs font-mono text-cyan-400 focus:outline-none focus:border-primary/60 transition-all resize-none" />
-              </div>
-              <button onClick={runInference} disabled={inferring || model.status !== "DEPLOYED"}
-                className="w-full py-2.5 bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-400 hover:to-violet-500 disabled:opacity-50 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all">
-                {inferring ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                {inferring ? "Running inference..." : model.status !== "DEPLOYED" ? "Model not deployed" : "Run Inference"}
-              </button>
-              {inferenceOutput && (
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs text-muted-foreground">Output</label>
-                    <button onClick={() => { navigator.clipboard.writeText(inferenceOutput); toast.success("Copied!"); }}
-                      className="text-xs text-primary hover:underline flex items-center gap-1"><Copy className="w-3 h-3" />Copy</button>
-                  </div>
-                  <pre className="bg-muted/20 rounded-xl p-3 text-xs font-mono text-green-400 overflow-auto max-h-48">{inferenceOutput}</pre>
-                </div>
-              )}
-            </div>
-          )}
-          {activeTab === "deploy" && (
-            <div className="space-y-4">
-              <p className="text-sm font-medium text-foreground">Deploy to Devices</p>
-              {["Deploy to all {model.devices > 0 ? model.devices : 0} connected devices", "Target specific device group", "Schedule rolling deployment", "A/B test with previous version"].map((opt, i) => (
-                <div key={i} className="glass rounded-xl p-4 border border-border/50 hover:border-primary/30 cursor-pointer transition-all flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary text-sm font-bold">{i + 1}</div>
-                  <p className="text-sm text-muted-foreground">{opt.replace("{model.devices > 0 ? model.devices : 0}", String(model.devices))}</p>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground ml-auto" />
-                </div>
-              ))}
-              <button onClick={() => toast.success("Deployment initiated!")}
-                disabled={model.status === "DRAFT" || model.status === "TRAINING"}
-                className="w-full py-2.5 bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-400 hover:to-violet-500 disabled:opacity-50 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all">
-                <Rocket className="w-4 h-4" /> Deploy Now
-              </button>
-            </div>
-          )}
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-export function AiModelsClient() {
-  const [search, setSearch] = useState("");
+export default function AIModelsClient() {
+  const [models, setModels] = useState<AIModel[]>([]);
+  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [typeFilter, setTypeFilter] = useState("ALL");
+  const [search, setSearch] = useState("");
   const [showUpload, setShowUpload] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<typeof MOCK_MODELS[0] | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [selected, setSelected] = useState<AIModel | null>(null);
+  const [form, setForm] = useState({ name:"", version:"1.0.0", type:"", framework:"", description:"", accuracy:"", latency:"", tags:"" });
 
-  const filtered = MOCK_MODELS.filter(m => {
-    const ms = search.toLowerCase();
-    return (m.name.toLowerCase().includes(ms) || m.framework.toLowerCase().includes(ms)) &&
-      (statusFilter === "ALL" || m.status === statusFilter) &&
-      (typeFilter === "ALL" || m.type === typeFilter);
-  });
+  const fetchModels = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({ limit:"50" });
+      if (statusFilter !== "ALL") params.set("status", statusFilter);
+      const res = await fetch(`/api/ai-models?${params}`);
+      const data = await res.json();
+      setModels(data.models || []);
+    } catch { toast.error("Failed to load models"); }
+    finally { setLoading(false); }
+  }, [statusFilter]);
+
+  useEffect(() => { fetchModels(); }, [fetchModels]);
+
+  const filtered = models.filter(m =>
+    search === "" || m.name.toLowerCase().includes(search.toLowerCase()) ||
+    m.type.toLowerCase().includes(search.toLowerCase()) || m.framework.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const handleCreate = async () => {
+    if (!form.name.trim() || !form.type || !form.framework) { toast.error("Name, type, and framework are required"); return; }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/ai-models", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          name: form.name, version: form.version, type: form.type, framework: form.framework,
+          description: form.description || undefined,
+          accuracy: form.accuracy ? parseFloat(form.accuracy) : undefined,
+          latency: form.latency ? parseFloat(form.latency) : undefined,
+          tags: form.tags ? form.tags.split(",").map(t=>t.trim()).filter(Boolean) : [],
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed");
+      toast.success("Model created successfully!");
+      setShowUpload(false);
+      setForm({ name:"", version:"1.0.0", type:"", framework:"", description:"", accuracy:"", latency:"", tags:"" });
+      fetchModels();
+    } catch (e:any) { toast.error(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const handleDelete = async (id:string) => {
+    try {
+      const res = await fetch(`/api/ai-models/${id}`, { method:"DELETE" });
+      if (!res.ok) throw new Error("Failed");
+      toast.success("Model deleted");
+      setSelected(null);
+      fetchModels();
+    } catch { toast.error("Failed to delete model"); }
+  };
+
+  const handleStatusUpdate = async (id:string, status:string) => {
+    try {
+      const res = await fetch(`/api/ai-models/${id}`, {
+        method:"PATCH", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast.success(`Model status updated to ${status}`);
+      fetchModels();
+      if (selected?.id === id) setSelected(prev => prev ? {...prev, status} : null);
+    } catch { toast.error("Failed to update status"); }
+  };
+
+  const fmtSize = (b?:number) => {
+    if (!b) return "—";
+    if (b > 1e6) return `${(b/1e6).toFixed(1)} MB`;
+    return `${(b/1e3).toFixed(0)} KB`;
+  };
+
+  const stats = {
+    total: models.length,
+    deployed: models.filter(m=>m.status==="DEPLOYED").length,
+    training: models.filter(m=>m.status==="TRAINING").length,
+    trained: models.filter(m=>m.status==="TRAINED").length,
+  };
 
   return (
-    <div className="space-y-6">
-      <AnimatePresence>{showUpload && <UploadModelModal onClose={() => setShowUpload(false)} />}</AnimatePresence>
-      <AnimatePresence>{selectedModel && <ModelDetailPanel model={selectedModel} onClose={() => setSelectedModel(null)} />}</AnimatePresence>
-
-      <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-bold text-foreground">AI Model Hub</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{MOCK_MODELS.length} models · {MOCK_MODELS.filter(m => m.status === "DEPLOYED").length} deployed</p></div>
-        <button onClick={() => setShowUpload(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-violet-600 hover:from-cyan-400 hover:to-violet-500 text-white rounded-lg text-sm font-medium transition-all shadow-[0_0_20px_rgba(0,212,255,0.2)]">
-          <Plus className="w-4 h-4" /> Upload Model
-        </button>
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-black text-white">AI Model Hub</h1>
+          <p className="text-sm text-muted-foreground mt-1">{stats.total} models · {stats.deployed} deployed · {stats.training} training</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={fetchModels} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-white border border-border/50 px-3 py-2 rounded-lg transition-all">
+            <RefreshCw className="w-3.5 h-3.5" /> Refresh
+          </button>
+          <button onClick={() => setShowUpload(true)} className="flex items-center gap-2 text-xs bg-violet-500 hover:bg-violet-400 text-white font-bold px-4 py-2 rounded-lg transition-all">
+            <Upload className="w-3.5 h-3.5" /> Upload Model
+          </button>
+        </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Stat bar */}
+      <div className="grid grid-cols-4 gap-3">
         {[
-          { label: "Total Models", value: MOCK_MODELS.length, icon: <Brain className="w-4 h-4" />, color: "violet" },
-          { label: "Deployed", value: MOCK_MODELS.filter(m => m.status === "DEPLOYED").length, icon: <Rocket className="w-4 h-4" />, color: "green" },
-          { label: "Training", value: MOCK_MODELS.filter(m => m.status === "TRAINING").length, icon: <Activity className="w-4 h-4" />, color: "blue" },
-          { label: "Total Inferences", value: "7.3M", icon: <Zap className="w-4 h-4" />, color: "yellow" },
-        ].map((s, i) => (
-          <div key={i} className="glass rounded-xl p-4 glow-border">
-            <div className={cn("flex items-center gap-2 mb-1", `text-${s.color}-400`)}>{s.icon}<span className="text-2xl font-bold">{s.value}</span></div>
-            <p className="text-xs text-muted-foreground">{s.label}</p>
+          { label:"Total Models", value:stats.total, color:"text-white" },
+          { label:"Deployed", value:stats.deployed, color:"text-green-400" },
+          { label:"Training", value:stats.training, color:"text-amber-400" },
+          { label:"Ready to Deploy", value:stats.trained, color:"text-blue-400" },
+        ].map((s,i) => (
+          <div key={i} className="glass rounded-xl p-4 text-center">
+            <div className={`text-2xl font-black ${s.color}`}>{s.value}</div>
+            <div className="text-[10px] text-muted-foreground mt-1">{s.label}</div>
           </div>
         ))}
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search models..."
-            className="w-full bg-muted/30 border border-border rounded-lg pl-9 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/60 transition-all" />
+      <div className="flex flex-wrap gap-3">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search models..."
+            className="w-full pl-9 pr-4 py-2 bg-muted/30 border border-border/50 rounded-lg text-sm text-white placeholder:text-muted-foreground focus:outline-none focus:border-violet-400/50" />
         </div>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-          className="bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60">
-          <option value="ALL">All Status</option>
-          {["DRAFT", "TRAINING", "TRAINED", "DEPLOYED", "ARCHIVED"].map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
-          className="bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/60">
-          <option value="ALL">All Types</option>
-          {MODEL_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
+        <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}
+          className="bg-muted/30 border border-border/50 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:border-violet-400/50">
+          {STATUSES.map(s=><option key={s} value={s}>{s==="ALL"?"All Status":s}</option>)}
         </select>
       </div>
 
-      {/* Model Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-        {filtered.map((model, i) => (
-          <motion.div key={model.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-            className="glass rounded-xl p-5 glow-border hover:-translate-y-1 transition-all duration-200 cursor-pointer group"
-            onClick={() => setSelectedModel(model)}>
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-2xl">{TYPE_ICONS[model.type]}</div>
-                <div>
-                  <p className="font-semibold text-foreground text-sm leading-tight">{model.name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">v{model.version}</p>
+      {/* Model cards */}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array(6).fill(0).map((_,i)=><div key={i} className="glass rounded-2xl p-5 animate-pulse h-48"><div className="h-4 bg-muted/50 rounded mb-3 w-3/4"/><div className="h-3 bg-muted/30 rounded w-1/2"/></div>)}
+        </div>
+      ) : filtered.length===0 ? (
+        <div className="text-center py-16">
+          <Brain className="w-12 h-12 mx-auto mb-3 text-muted-foreground/30"/>
+          <p className="text-white font-semibold mb-1">No models found</p>
+          <p className="text-sm text-muted-foreground mb-4">Upload your first AI model to get started</p>
+          <button onClick={()=>setShowUpload(true)} className="text-sm bg-violet-500 hover:bg-violet-400 text-white font-bold px-4 py-2 rounded-lg transition-all">+ Upload Model</button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map(model => (
+            <div key={model.id} onClick={()=>setSelected(model)} className="glass rounded-2xl p-5 glow-border hover:border-violet-400/40 cursor-pointer transition-all group">
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500/20 to-cyan-500/20 flex items-center justify-center">
+                    <Brain className="w-5 h-5 text-violet-400"/>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white group-hover:text-violet-400 transition-colors">{model.name}</h3>
+                    <span className="text-[10px] text-muted-foreground">v{model.version}</span>
+                  </div>
+                </div>
+                <span className={`text-[10px] font-mono px-2 py-1 rounded-full ${STATUS_COLORS[model.status]||STATUS_COLORS.DRAFT}`}>{model.status}</span>
+              </div>
+
+              {/* Training progress */}
+              {model.status === "TRAINING" && model.trainingJobs?.[0] && (
+                <div className="mb-3">
+                  <div className="flex justify-between text-[10px] mb-1">
+                    <span className="text-muted-foreground flex items-center gap-1"><Activity className="w-3 h-3 text-amber-400"/>Training...</span>
+                    <span className="text-amber-400 font-mono">{model.trainingJobs[0].progress}%</span>
+                  </div>
+                  <div className="h-1.5 bg-muted rounded-full">
+                    <div className="h-full bg-amber-400 rounded-full animate-pulse" style={{width:`${model.trainingJobs[0].progress}%`}}/>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 mb-3">
+                <span className={`text-[10px] font-mono font-bold ${FRAMEWORK_COLORS[model.framework]||"text-cyan-400"}`}>{model.framework}</span>
+                <span className="text-[10px] text-muted-foreground">·</span>
+                <span className="text-[10px] text-muted-foreground">{TYPE_LABELS[model.type]||model.type}</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-[10px]">
+                <div className="text-center">
+                  <div className="text-white font-bold">{model.accuracy ? `${model.accuracy}%` : "—"}</div>
+                  <div className="text-muted-foreground">Accuracy</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-white font-bold">{model.latency ? `${model.latency}ms` : "—"}</div>
+                  <div className="text-muted-foreground">Latency</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-white font-bold">{fmtSize(model.size||undefined)}</div>
+                  <div className="text-muted-foreground">Size</div>
                 </div>
               </div>
-              <span className={cn("text-xs px-2 py-0.5 rounded-full border font-medium", getStatusColor(model.status), "border-current/20")}>{model.status}</span>
+
+              {model.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-3">
+                  {model.tags.slice(0,3).map((t,i)=>(
+                    <span key={i} className="text-[9px] bg-muted/40 text-muted-foreground px-1.5 py-0.5 rounded-full">{t}</span>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="grid grid-cols-3 gap-2 mb-4">
-              <div className="text-center"><p className="text-xs text-muted-foreground">Accuracy</p><p className="text-sm font-bold text-green-400">{model.accuracy ? `${model.accuracy}%` : "—"}</p></div>
-              <div className="text-center"><p className="text-xs text-muted-foreground">Latency</p><p className="text-sm font-bold text-cyan-400">{model.latency ? `${model.latency}ms` : "—"}</p></div>
-              <div className="text-center"><p className="text-xs text-muted-foreground">Size</p><p className="text-sm font-bold text-violet-400">{model.size}MB</p></div>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className={cn("text-xs px-2 py-0.5 rounded-md border", FRAMEWORK_COLORS[model.framework])}>{model.framework}</span>
-              <span className="text-xs text-muted-foreground">{model.devices} devices</span>
-            </div>
-            {model.status === "TRAINING" && (
-              <div className="mt-3">
-                <div className="flex justify-between text-xs mb-1"><span className="text-muted-foreground">Training...</span><span className="text-blue-400">Epoch 14/20</span></div>
-                <div className="h-1.5 bg-muted rounded-full"><div className="h-full bg-blue-400 rounded-full animate-pulse" style={{ width: "70%" }} /></div>
+          ))}
+        </div>
+      )}
+
+      {/* Detail Panel */}
+      {selected && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={()=>setSelected(null)}/>
+          <div className="w-full max-w-md bg-card border-l border-border/50 overflow-y-auto">
+            <div className="sticky top-0 bg-card border-b border-border/30 flex items-center justify-between p-5">
+              <div>
+                <h2 className="text-lg font-black text-white">{selected.name}</h2>
+                <span className="text-xs text-muted-foreground">v{selected.version} · {selected.framework}</span>
               </div>
-            )}
-          </motion.div>
-        ))}
-      </div>
+              <button onClick={()=>setSelected(null)} className="p-2 hover:bg-muted/30 rounded-lg"><X className="w-4 h-4 text-muted-foreground"/></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <span className={`text-xs font-mono px-3 py-1.5 rounded-full ${STATUS_COLORS[selected.status]||STATUS_COLORS.DRAFT}`}>{selected.status}</span>
+
+              {selected.description && <p className="text-sm text-muted-foreground">{selected.description}</p>}
+
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  {label:"Type",value:TYPE_LABELS[selected.type]||selected.type},
+                  {label:"Framework",value:selected.framework},
+                  {label:"Accuracy",value:selected.accuracy ? `${selected.accuracy}%` : "—"},
+                  {label:"Latency",value:selected.latency ? `${selected.latency}ms` : "—"},
+                  {label:"Model Size",value:fmtSize(selected.size||undefined)},
+                  {label:"Deployments",value:String(selected._count?.deployments || 0)},
+                ].map((item,i)=>(
+                  <div key={i} className="glass rounded-xl p-3">
+                    <div className="text-[10px] text-muted-foreground mb-1">{item.label}</div>
+                    <div className="text-xs font-semibold text-white">{item.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Status actions */}
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-white">Actions</div>
+                {selected.status === "TRAINED" && (
+                  <button onClick={()=>handleStatusUpdate(selected.id,"DEPLOYED")} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-green-500/10 border border-green-400/30 hover:bg-green-500/20 transition-all text-sm text-green-400">
+                    <Play className="w-4 h-4"/> Deploy Model
+                  </button>
+                )}
+                {selected.status === "DEPLOYED" && (
+                  <button onClick={()=>handleStatusUpdate(selected.id,"TRAINED")} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-400/30 hover:bg-amber-500/20 transition-all text-sm text-amber-400">
+                    <Archive className="w-4 h-4"/> Undeploy Model
+                  </button>
+                )}
+                {selected.status === "DRAFT" && (
+                  <button onClick={()=>handleStatusUpdate(selected.id,"TRAINING")} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-violet-500/10 border border-violet-400/30 hover:bg-violet-500/20 transition-all text-sm text-violet-400">
+                    <Zap className="w-4 h-4"/> Start Training
+                  </button>
+                )}
+                <button onClick={()=>handleDelete(selected.id)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500/10 border border-red-400/30 hover:bg-red-500/20 transition-all text-sm text-red-400">
+                  <Trash2 className="w-4 h-4"/> Delete Model
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Modal */}
+      {showUpload && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={()=>setShowUpload(false)}/>
+          <div className="relative glass border border-border/50 rounded-2xl w-full max-w-lg p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <div><h2 className="text-xl font-black text-white">Upload / Register Model</h2><p className="text-xs text-muted-foreground mt-1">Add a new model to your AI hub</p></div>
+              <button onClick={()=>setShowUpload(false)} className="p-2 hover:bg-muted/30 rounded-lg"><X className="w-4 h-4 text-muted-foreground"/></button>
+            </div>
+            <div className="space-y-4">
+              {[
+                {key:"name",label:"Model Name *",placeholder:"e.g. YOLOv8 Edge Detector"},
+                {key:"version",label:"Version",placeholder:"1.0.0"},
+                {key:"description",label:"Description",placeholder:"Short description of what this model does"},
+                {key:"accuracy",label:"Accuracy (%)",placeholder:"e.g. 94.2"},
+                {key:"latency",label:"Inference Latency (ms)",placeholder:"e.g. 28"},
+                {key:"tags",label:"Tags (comma-separated)",placeholder:"edge, realtime, vision"},
+              ].map(f=>(
+                <div key={f.key}>
+                  <label className="text-xs font-semibold text-muted-foreground mb-1 block">{f.label}</label>
+                  <input value={(form as any)[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))}
+                    placeholder={f.placeholder}
+                    className="w-full px-3 py-2.5 bg-muted/30 border border-border/50 rounded-xl text-sm text-white placeholder:text-muted-foreground focus:outline-none focus:border-violet-400/50"/>
+                </div>
+              ))}
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground mb-1 block">Model Type *</label>
+                <select value={form.type} onChange={e=>setForm(p=>({...p,type:e.target.value}))}
+                  className="w-full px-3 py-2.5 bg-muted/30 border border-border/50 rounded-xl text-sm text-white focus:outline-none focus:border-violet-400/50">
+                  <option value="">Select type...</option>
+                  {MODEL_TYPES.map(t=><option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground mb-1 block">Framework *</label>
+                <select value={form.framework} onChange={e=>setForm(p=>({...p,framework:e.target.value}))}
+                  className="w-full px-3 py-2.5 bg-muted/30 border border-border/50 rounded-xl text-sm text-white focus:outline-none focus:border-violet-400/50">
+                  <option value="">Select framework...</option>
+                  {FRAMEWORKS.map(f=><option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
+              <button onClick={handleCreate} disabled={saving}
+                className="w-full mt-2 bg-violet-500 hover:bg-violet-400 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2">
+                {saving ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Saving...</> : <><Check className="w-4 h-4"/>Create Model</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

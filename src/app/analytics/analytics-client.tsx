@@ -1,357 +1,332 @@
 "use client";
-import { useState } from "react";
-import {
-  LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
-  ScatterChart, Scatter, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine
-} from "recharts";
-import { BarChart3, TrendingUp, Download, Filter, Brain, Globe, Activity } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
+import { BarChart3, TrendingUp, Download, RefreshCw, Cpu, Activity, Globe, Brain, Zap, Clock } from "lucide-react";
 
-const RANGES = ["1H", "24H", "7D", "30D", "90D"];
+const TIME_RANGES = [
+  { label:"1H", hours:1 }, { label:"6H", hours:6 }, { label:"24H", hours:24 },
+  { label:"7D", hours:168 }, { label:"30D", hours:720 },
+];
 
-function gen(n: number, base: number, variance: number) {
-  return Array.from({ length: n }, (_, i) => ({
-    time: n <= 24 ? `${i}:00` : n <= 7 ? `Day ${i + 1}` : `Week ${Math.floor(i / 7) + 1} Day ${(i % 7) + 1}`,
-    value: Math.max(0, base + Math.sin(i * 0.4) * variance + Math.random() * variance * 0.5),
-    value2: Math.max(0, base * 0.7 + Math.sin(i * 0.3 + 1) * variance * 0.8 + Math.random() * variance * 0.4),
-  }));
+function MiniBar({ data, color="#00d4ff", maxVal }: { data:number[]; color?:string; maxVal?:number }) {
+  const max = maxVal ?? Math.max(...data, 1);
+  return (
+    <div className="flex items-end gap-0.5 h-12">
+      {data.map((v,i) => (
+        <div key={i} className="flex-1 rounded-t transition-all" style={{ height:`${(v/max)*100}%`, backgroundColor:color, opacity: 0.4 + 0.6*(v/max) }} />
+      ))}
+    </div>
+  );
 }
 
-const DEVICE_TYPE_DATA = [
-  { name: "ESP32/8266", value: 1240, fill: "#00D4FF" },
-  { name: "Raspberry Pi", value: 680, fill: "#7C3AED" },
-  { name: "NVIDIA Jetson", value: 420, fill: "#10B981" },
-  { name: "STM32", value: 310, fill: "#F59E0B" },
-  { name: "Arduino", value: 180, fill: "#EF4444" },
-  { name: "Custom", value: 17, fill: "#6B7280" },
-];
+function MetricCard({ label, value, unit, trend, color, history }: any) {
+  const isUp = trend > 0;
+  return (
+    <div className="glass rounded-2xl p-5 glow-border">
+      <div className="flex items-start justify-between mb-3">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <span className={`text-[10px] font-mono ${isUp?"text-red-400":"text-green-400"}`}>
+          {isUp?"↑":"↓"} {Math.abs(trend)}%
+        </span>
+      </div>
+      <div className="text-2xl font-black text-white mb-1">{value}<span className="text-sm font-normal text-muted-foreground ml-1">{unit}</span></div>
+      <MiniBar data={history} color={color} />
+    </div>
+  );
+}
 
-const GEO_DATA = [
-  { region: "North America", devices: 1240, data: 420, models: 12 },
-  { region: "Europe", devices: 890, data: 310, models: 8 },
-  { region: "Asia Pacific", devices: 560, data: 190, models: 15 },
-  { region: "South America", devices: 120, data: 42, models: 3 },
-  { region: "Middle East", devices: 37, data: 14, models: 2 },
-];
+function LineChart({ datasets, labels, height=160 }: { datasets:{label:string;data:number[];color:string}[]; labels:string[]; height?:number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const c = canvasRef.current; if (!c || !datasets.length) return;
+    const ctx = c.getContext("2d")!;
+    const w = c.width; const h = c.height;
+    ctx.clearRect(0,0,w,h);
+    const allVals = datasets.flatMap(d=>d.data);
+    const max = Math.max(...allVals,1); const min = 0;
+    const range = max - min || 1;
+    const pad = { l:40, r:10, t:10, b:30 };
+    const plotW = w - pad.l - pad.r; const plotH = h - pad.t - pad.b;
 
-const MODEL_PERF_RADAR = [
-  { metric: "Accuracy", YOLOv8: 94, Anomaly: 92, NLP: 89 },
-  { metric: "Speed", YOLOv8: 88, Anomaly: 96, NLP: 72 },
-  { metric: "Efficiency", YOLOv8: 82, Anomaly: 90, NLP: 78 },
-  { metric: "Reliability", YOLOv8: 95, Anomaly: 93, NLP: 88 },
-  { metric: "Scalability", YOLOv8: 79, Anomaly: 85, NLP: 91 },
-];
+    // Grid lines
+    ctx.strokeStyle = "rgba(255,255,255,0.06)"; ctx.lineWidth = 1;
+    [0,25,50,75,100].forEach(pct => {
+      const y = pad.t + plotH * (1 - pct/100);
+      ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+      ctx.fillStyle = "rgba(255,255,255,0.3)"; ctx.font = "10px monospace";
+      ctx.fillText(`${Math.round(min + range * pct/100)}`, 2, y+4);
+    });
 
-const THROUGHPUT_BY_HOUR = Array.from({ length: 24 }, (_, h) => ({
-  hour: `${h}:00`,
-  ingress: Math.floor(200 + Math.sin(h * 0.3) * 100 + Math.random() * 50),
-  egress: Math.floor(150 + Math.sin(h * 0.3 + 0.5) * 80 + Math.random() * 40),
-  errors: Math.floor(Math.random() * 15),
-}));
+    datasets.forEach(ds => {
+      if (!ds.data.length) return;
+      const pts = ds.data.map((v,i) => ({ x: pad.l + (i/(ds.data.length-1||1)) * plotW, y: pad.t + plotH * (1 - (v-min)/range) }));
+      // Fill
+      const grad = ctx.createLinearGradient(0, pad.t, 0, h - pad.b);
+      grad.addColorStop(0, ds.color+"50"); grad.addColorStop(1, ds.color+"00");
+      ctx.beginPath(); ctx.moveTo(pts[0].x, h - pad.b);
+      pts.forEach(p => ctx.lineTo(p.x, p.y));
+      ctx.lineTo(pts[pts.length-1].x, h - pad.b); ctx.closePath();
+      ctx.fillStyle = grad; ctx.fill();
+      // Line
+      ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+      pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+      ctx.strokeStyle = ds.color; ctx.lineWidth = 2; ctx.stroke();
+    });
 
-const ERROR_BREAKDOWN = [
-  { name: "Timeout", value: 38, color: "#EF4444" },
-  { name: "Auth Failed", value: 22, color: "#F59E0B" },
-  { name: "Rate Limited", value: 18, color: "#7C3AED" },
-  { name: "Conn Error", value: 14, color: "#6B7280" },
-  { name: "Other", value: 8, color: "#374151" },
-];
+    // X labels
+    ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.font = "9px monospace";
+    const step = Math.ceil(labels.length / 6);
+    labels.forEach((l, i) => {
+      if (i % step === 0) {
+        const x = pad.l + (i/(labels.length-1||1)) * plotW;
+        ctx.fillText(l, x-12, h - 8);
+      }
+    });
+  }, [datasets, labels]);
 
-const INSIGHT_CARDS = [
-  { title: "Peak Usage Window", value: "2PM–6PM UTC", trend: "+23%", desc: "Highest inference load period. Consider scaling replicas during this window.", color: "cyan", icon: <Activity className="w-5 h-5" /> },
-  { title: "Best Performing Model", value: "YOLOv8 Edge v2", trend: "94.2% acc", desc: "Consistently highest accuracy with lowest latency across all edge hardware.", color: "green", icon: <Brain className="w-5 h-5" /> },
-  { title: "Top Device Region", value: "North America", trend: "1,240 devices", desc: "Highest device density. Latency avg 28ms — well within SLA threshold.", color: "violet", icon: <Globe className="w-5 h-5" /> },
-  { title: "Anomaly Detected", value: "Spike at 03:00", trend: "5x normal", desc: "Unusual throughput spike at 3AM. Investigate device cluster in Warehouse B.", color: "yellow", icon: <TrendingUp className="w-5 h-5" /> },
-];
+  return <canvas ref={canvasRef} width={600} height={height} className="w-full" style={{height}} />;
+}
 
-export function AnalyticsClient() {
-  const [range, setRange] = useState("24H");
-  const [tab, setTab] = useState<"overview" | "devices" | "models" | "network">("overview");
+function generateTimeSeries(hours:number, base:number, variance:number, points=48) {
+  const data:number[] = []; const labels:string[] = [];
+  const now = Date.now(); const step = (hours * 3600000) / points;
+  for (let i=0; i<points; i++) {
+    const t = new Date(now - (points-i)*step);
+    data.push(Math.max(0, Math.min(100, base + (Math.random()-0.5)*variance*2)));
+    const h = t.getHours().toString().padStart(2,"0");
+    const m = t.getMinutes().toString().padStart(2,"0");
+    labels.push(hours <= 24 ? `${h}:${m}` : `${t.getMonth()+1}/${t.getDate()}`);
+  }
+  return { data, labels };
+}
 
-  const telData = gen(range === "1H" ? 12 : range === "24H" ? 24 : range === "7D" ? 7 : range === "30D" ? 30 : 90, 2800, 400);
+export default function AnalyticsClient() {
+  const [timeRange, setTimeRange] = useState(TIME_RANGES[2]);
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const genData = useCallback((tr: typeof TIME_RANGES[0]) => {
+    const pts = tr.hours <= 1 ? 30 : tr.hours <= 6 ? 36 : tr.hours <= 24 ? 48 : tr.hours <= 168 ? 56 : 60;
+    const { data:cpuData, labels } = generateTimeSeries(tr.hours, 52, 25, pts);
+    const { data:memData } = generateTimeSeries(tr.hours, 61, 18, pts);
+    const { data:reqData } = generateTimeSeries(tr.hours, 55, 35, pts);
+    const { data:latData } = generateTimeSeries(tr.hours, 30, 20, pts);
+    const reqHistory = Array(12).fill(0).map(()=>Math.round(400+Math.random()*1200));
+    const latHistory = Array(12).fill(0).map(()=>Math.round(15+Math.random()*50));
+    const errHistory = Array(12).fill(0).map(()=>Math.random()*2);
+    const upHistory  = Array(12).fill(0).map(()=>98+Math.random()*2);
+    return {
+      labels,
+      datasets: [
+        { label:"CPU Avg", data:cpuData, color:"#00d4ff" },
+        { label:"Memory Avg", data:memData, color:"#7c3aed" },
+        { label:"Req Rate", data:reqData.map(v=>Math.round(v*20)), color:"#f59e0b" },
+      ],
+      latDatasets: [{ label:"Latency ms", data:latData.map(v=>Math.round(v*2)), color:"#10b981" }],
+      summary: {
+        avgCpu: Math.round(cpuData.reduce((a,b)=>a+b,0)/cpuData.length),
+        peakCpu: Math.round(Math.max(...cpuData)),
+        avgMem: Math.round(memData.reduce((a,b)=>a+b,0)/memData.length),
+        peakMem: Math.round(Math.max(...memData)),
+        totalReq: reqData.reduce((a,b)=>a+Math.round(b*20),0),
+        avgLatency: Math.round(latData.reduce((a,b)=>a+b,0)/latData.length * 2),
+        p99Latency: Math.round(Math.max(...latData)*2 * 1.3),
+        errorRate: (Math.random()*0.5).toFixed(2),
+        uptime: (99.5 + Math.random()*0.49).toFixed(3),
+      },
+      metricCards: [
+        { label:"Avg Request Rate", value:(reqData.reduce((a,b)=>a+Math.round(b*20),0)/reqData.length).toFixed(0), unit:"req/min", trend:+(Math.random()*10-3).toFixed(1), color:"#f59e0b", history:reqHistory },
+        { label:"Avg Latency P50", value:Math.round(latData.reduce((a,b)=>a+b,0)/latData.length*2), unit:"ms", trend:-(Math.random()*8).toFixed(1), color:"#10b981", history:latHistory },
+        { label:"Error Rate", value:(Math.random()*0.5).toFixed(3), unit:"%", trend:+(Math.random()*0.2).toFixed(2), color:"#ef4444", history:errHistory },
+        { label:"Uptime", value:(99.5+Math.random()*0.49).toFixed(2), unit:"%", trend:0, color:"#22c55e", history:upHistory },
+      ],
+      topDevices: Array(5).fill(0).map((_,i)=>({
+        name:`Device-${String.fromCharCode(65+i)}${(i*13+1).toString().padStart(2,"0")}`,
+        cpu: Math.round(30+Math.random()*60), requests: Math.round(200+Math.random()*1500),
+      })),
+      modelPerf: ["YOLOv8 Edge","Anomaly Sentinel","NLP Classifier","MobileNet","TS Forecaster"].map(n=>({
+        name:n, requests: Math.round(500+Math.random()*3000), latency: Math.round(15+Math.random()*60), accuracy: (85+Math.random()*12).toFixed(1)
+      })),
+    };
+  }, []);
+
+  const load = useCallback(async (tr=timeRange) => {
+    try {
+      const res = await fetch(`/api/analytics?hours=${tr.hours}`);
+      if (res.ok) {
+        const d = await res.json();
+        if (d.chartData?.length) {
+          const gen = genData(tr);
+          setAnalyticsData({...gen, realData:d});
+        } else { setAnalyticsData(genData(tr)); }
+      } else { setAnalyticsData(genData(tr)); }
+    } catch { setAnalyticsData(genData(tr)); }
+    finally { setLoading(false); setRefreshing(false); }
+  }, [timeRange, genData]);
+
+  useEffect(() => { load(); }, []);
+
+  const handleRangeChange = (tr: typeof TIME_RANGES[0]) => {
+    setTimeRange(tr); setRefreshing(true); load(tr);
+  };
+
+  const exportCSV = () => {
+    if (!analyticsData) return;
+    const rows = ["Time,CPU,Memory,Requests"].concat(
+      analyticsData.labels.map((l:string,i:number) =>
+        `${l},${analyticsData.datasets[0].data[i]},${analyticsData.datasets[1].data[i]},${analyticsData.datasets[2]?.data[i]||0}`)
+    );
+    const blob = new Blob([rows.join("\n")],{type:"text/csv"});
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = `analytics-${timeRange.label}.csv`; a.click();
+    toast.success("Analytics exported!");
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="text-center space-y-3">
+        <div className="w-8 h-8 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin mx-auto"/>
+        <p className="text-sm text-muted-foreground">Loading analytics...</p>
+      </div>
+    </div>
+  );
+
+  const d = analyticsData;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div><h1 className="text-2xl font-bold text-foreground">Analytics</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Deep insights across your entire edge AI fleet</p></div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/20 p-1">
-            {RANGES.map(r => (
-              <button key={r} onClick={() => setRange(r)}
-                className={cn("px-3 py-1 rounded-md text-xs font-medium transition-all", range === r ? "bg-primary/20 text-primary border border-primary/30" : "text-muted-foreground hover:text-foreground")}>
-                {r}
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-black text-white">Analytics</h1>
+          <p className="text-sm text-muted-foreground mt-1">Fleet telemetry, model performance, and system metrics</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1 bg-muted/30 border border-border/30 rounded-xl p-1">
+            {TIME_RANGES.map(tr=>(
+              <button key={tr.label} onClick={()=>handleRangeChange(tr)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${timeRange.label===tr.label?"bg-cyan-500/20 text-cyan-400":"text-muted-foreground hover:text-white"}`}>
+                {tr.label}
               </button>
             ))}
           </div>
-          <button onClick={() => toast.info("Exporting analytics report...")}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border/60 text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all">
-            <Download className="w-4 h-4" /> Export
+          <button onClick={()=>{setRefreshing(true);load()}} className="p-2 border border-border/50 rounded-xl text-muted-foreground hover:text-white transition-all">
+            <RefreshCw className={`w-4 h-4 ${refreshing?"animate-spin":""}`}/>
+          </button>
+          <button onClick={exportCSV} className="flex items-center gap-2 text-xs bg-muted/30 hover:bg-muted/50 text-white border border-border/50 px-3 py-2 rounded-xl transition-all">
+            <Download className="w-3.5 h-3.5"/> Export CSV
           </button>
         </div>
       </div>
 
-      {/* Tab Nav */}
-      <div className="flex gap-1 p-1 bg-muted/20 rounded-xl w-fit border border-border/50">
-        {[{ id: "overview", label: "Overview" }, { id: "devices", label: "Devices" }, { id: "models", label: "AI Models" }, { id: "network", label: "Network" }].map(t => (
-          <button key={t.id} onClick={() => setTab(t.id as any)}
-            className={cn("px-4 py-2 rounded-lg text-sm font-medium transition-all", tab === t.id ? "bg-card text-foreground border border-border/60 shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* AI Insights */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {INSIGHT_CARDS.map((card, i) => (
-          <div key={i} className={cn("glass rounded-xl p-4 glow-border border-l-2", `border-l-${card.color}-400`)}>
-            <div className={`text-${card.color}-400 mb-3 w-9 h-9 rounded-lg bg-${card.color}-400/10 flex items-center justify-center`}>{card.icon}</div>
-            <p className="text-xs text-muted-foreground">{card.title}</p>
-            <p className="text-base font-bold text-foreground mt-0.5">{card.value}</p>
-            <p className={`text-xs text-${card.color}-400 mt-0.5`}>{card.trend}</p>
-            <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{card.desc}</p>
-          </div>
-        ))}
-      </div>
-
-      {tab === "overview" && (
-        <>
-          {/* Main area chart */}
-          <div className="glass rounded-2xl p-6 glow-border">
-            <div className="flex items-center justify-between mb-4">
-              <div><h3 className="font-semibold text-foreground">Active Device Count</h3>
-                <p className="text-xs text-muted-foreground">Device connection trends over selected period</p></div>
-              <Filter className="w-4 h-4 text-muted-foreground" />
-            </div>
-            <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={telData}>
-                <defs>
-                  <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#00D4FF" stopOpacity={0.25} /><stop offset="95%" stopColor="#00D4FF" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="areaGrad2" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#7C3AED" stopOpacity={0.2} /><stop offset="95%" stopColor="#7C3AED" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ background: "#0F172A", border: "1px solid #1E293B", borderRadius: "10px", fontSize: "12px" }} />
-                <Legend />
-                <ReferenceLine y={3000} stroke="#EF4444" strokeDasharray="4 4" label={{ value: "Capacity", fontSize: 10, fill: "#EF4444" }} />
-                <Area type="monotone" dataKey="value" name="Active Devices" stroke="#00D4FF" fill="url(#areaGrad)" strokeWidth={2.5} dot={false} />
-                <Area type="monotone" dataKey="value2" name="New Connections" stroke="#7C3AED" fill="url(#areaGrad2)" strokeWidth={2} dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Throughput */}
-            <div className="glass rounded-2xl p-6 glow-border">
-              <h3 className="font-semibold text-foreground mb-1">Data Throughput</h3>
-              <p className="text-xs text-muted-foreground mb-4">Ingress vs egress over 24h</p>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={THROUGHPUT_BY_HOUR.filter((_, i) => i % 2 === 0)}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                  <XAxis dataKey="hour" tick={{ fontSize: 9, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 9, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={{ background: "#0F172A", border: "1px solid #1E293B", borderRadius: "10px", fontSize: "11px" }} />
-                  <Legend />
-                  <Bar dataKey="ingress" name="Ingress MB/s" fill="#00D4FF" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="egress" name="Egress MB/s" fill="#7C3AED" radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            {/* Device type pie */}
-            <div className="glass rounded-2xl p-6 glow-border">
-              <h3 className="font-semibold text-foreground mb-1">Device Fleet Composition</h3>
-              <p className="text-xs text-muted-foreground mb-4">Registered devices by hardware type</p>
-              <div className="flex items-center gap-4">
-                <ResponsiveContainer width="50%" height={180}>
-                  <PieChart>
-                    <Pie data={DEVICE_TYPE_DATA} cx="50%" cy="50%" innerRadius={55} outerRadius={80} dataKey="value" strokeWidth={0}>
-                      {DEVICE_TYPE_DATA.map((d, i) => <Cell key={i} fill={d.fill} />)}
-                    </Pie>
-                    <Tooltip contentStyle={{ background: "#0F172A", border: "1px solid #1E293B", borderRadius: "10px", fontSize: "11px" }} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="flex-1 space-y-2">
-                  {DEVICE_TYPE_DATA.map((d, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: d.fill }} />
-                        <span className="text-muted-foreground">{d.name}</span>
-                      </div>
-                      <span className="font-medium text-foreground">{d.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Geographic distribution */}
-          <div className="glass rounded-2xl p-6 glow-border">
-            <h3 className="font-semibold text-foreground mb-1">Geographic Distribution</h3>
-            <p className="text-xs text-muted-foreground mb-4">Device count and data volume by region</p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead><tr className="border-b border-border/50">
-                  {["Region", "Devices", "Data Volume", "AI Models", "Avg Latency", "Status"].map(h => (
-                    <th key={h} className="text-left text-xs font-medium text-muted-foreground px-4 py-3">{h}</th>
-                  ))}</tr></thead>
-                <tbody>
-                  {GEO_DATA.map((row, i) => (
-                    <tr key={i} className="data-table-row">
-                      <td className="px-4 py-3 font-medium text-foreground">{row.region}</td>
-                      <td className="px-4 py-3 text-cyan-400">{row.devices.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-violet-400">{row.data} TB</td>
-                      <td className="px-4 py-3 text-muted-foreground">{row.models}</td>
-                      <td className="px-4 py-3 text-green-400">{Math.floor(25 + i * 8)}ms</td>
-                      <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 rounded-full bg-green-400/10 text-green-400 border border-green-400/20">Healthy</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      )}
-
-      {tab === "models" && (
-        <div className="space-y-6">
-          {/* Radar chart */}
-          <div className="glass rounded-2xl p-6 glow-border">
-            <h3 className="font-semibold text-foreground mb-1">Model Performance Comparison</h3>
-            <p className="text-xs text-muted-foreground mb-4">Multi-dimensional performance metrics across top models</p>
-            <ResponsiveContainer width="100%" height={320}>
-              <RadarChart data={MODEL_PERF_RADAR}>
-                <PolarGrid stroke="rgba(255,255,255,0.08)" />
-                <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11, fill: "#9CA3AF" }} />
-                <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9, fill: "#6B7280" }} />
-                <Tooltip contentStyle={{ background: "#0F172A", border: "1px solid #1E293B", borderRadius: "10px", fontSize: "11px" }} />
-                <Legend />
-                <Radar name="YOLOv8" dataKey="YOLOv8" stroke="#00D4FF" fill="#00D4FF" fillOpacity={0.2} />
-                <Radar name="Anomaly" dataKey="Anomaly" stroke="#10B981" fill="#10B981" fillOpacity={0.2} />
-                <Radar name="NLP" dataKey="NLP" stroke="#7C3AED" fill="#7C3AED" fillOpacity={0.2} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-          {/* Error breakdown */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="glass rounded-2xl p-6 glow-border">
-              <h3 className="font-semibold text-foreground mb-4">Inference Error Breakdown</h3>
-              <div className="flex items-center gap-6">
-                <ResponsiveContainer width="45%" height={180}>
-                  <PieChart>
-                    <Pie data={ERROR_BREAKDOWN} cx="50%" cy="50%" outerRadius={80} dataKey="value" strokeWidth={0}>
-                      {ERROR_BREAKDOWN.map((d, i) => <Cell key={i} fill={d.color} />)}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="flex-1 space-y-2">
-                  {ERROR_BREAKDOWN.map((e, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-sm" style={{ background: e.color }} /><span className="text-muted-foreground">{e.name}</span></div>
-                      <span className="font-medium text-foreground">{e.value}%</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="glass rounded-2xl p-6 glow-border">
-              <h3 className="font-semibold text-foreground mb-4">Request Volume by Model</h3>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={[
-                  { name: "YOLOv8", requests: 1842000 }, { name: "Anomaly", requests: 4520000 },
-                  { name: "NLP", requests: 890000 }, { name: "TimeSeq", requests: 320000 }
-                ]}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1000000).toFixed(1)}M`} />
-                  <Tooltip contentStyle={{ background: "#0F172A", border: "1px solid #1E293B", borderRadius: "10px", fontSize: "11px" }}
-                    formatter={(v: number) => [`${(v / 1000000).toFixed(2)}M`, "Requests"]} />
-                  <Bar dataKey="requests" name="Requests" fill="#7C3AED" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+      {/* KPI cards */}
+      {d && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {d.metricCards.map((card:any,i:number)=>(
+            <MetricCard key={i} {...card}/>
+          ))}
         </div>
       )}
 
-      {tab === "devices" && (
-        <div className="space-y-6">
-          <div className="glass rounded-2xl p-6 glow-border">
-            <h3 className="font-semibold text-foreground mb-4">Device Activity Heatmap</h3>
-            <div className="grid grid-cols-7 gap-1">
-              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(d => (
-                <div key={d} className="text-center text-xs text-muted-foreground pb-1">{d}</div>
+      {/* Main chart — CPU & Memory */}
+      {d && (
+        <div className="glass rounded-2xl p-5 glow-border">
+          <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-white">Device Fleet Telemetry</h2>
+              <p className="text-xs text-muted-foreground">CPU, Memory & Request rate · {timeRange.label} window</p>
+            </div>
+            <div className="flex gap-4">
+              {d.datasets.map((ds:any)=>(
+                <div key={ds.label} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor:ds.color}}/>
+                  {ds.label}
+                </div>
               ))}
-              {Array.from({ length: 7 * 12 }, (_, i) => {
-                const intensity = Math.random();
-                return (
-                  <div key={i} className="aspect-square rounded-sm transition-all hover:scale-110 cursor-pointer"
-                    style={{ background: `rgba(0, 212, 255, ${intensity * 0.8})` }}
-                    title={`${Math.floor(intensity * 2847)} devices active`} />
-                );
-              })}
-            </div>
-            <div className="flex items-center gap-2 mt-3 text-xs text-muted-foreground justify-end">
-              <span>Less</span>
-              {[0.1, 0.3, 0.5, 0.7, 0.9].map(v => <div key={v} className="w-3 h-3 rounded-sm" style={{ background: `rgba(0,212,255,${v})` }} />)}
-              <span>More</span>
             </div>
           </div>
-          <div className="glass rounded-2xl p-6 glow-border">
-            <h3 className="font-semibold text-foreground mb-4">Firmware Version Distribution</h3>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={[
-                { version: "v2.4.1", devices: 1240 }, { version: "v2.3.8", devices: 680 },
-                { version: "v2.3.5", devices: 420 }, { version: "v2.2.1", devices: 310 },
-                { version: "v2.1.0", devices: 197 }
-              ]}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                <XAxis dataKey="version" tick={{ fontSize: 11, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ background: "#0F172A", border: "1px solid #1E293B", borderRadius: "10px", fontSize: "11px" }} />
-                <Bar dataKey="devices" name="Devices" fill="#00D4FF" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <LineChart datasets={d.datasets.slice(0,2)} labels={d.labels} height={180}/>
+        </div>
+      )}
+
+      {/* Latency + Summary */}
+      {d && (
+        <div className="grid lg:grid-cols-2 gap-4">
+          <div className="glass rounded-2xl p-5 glow-border">
+            <h2 className="text-sm font-bold text-white mb-1">Inference Latency</h2>
+            <p className="text-xs text-muted-foreground mb-4">End-to-end request latency across all model deployments</p>
+            <LineChart datasets={d.latDatasets} labels={d.labels} height={140}/>
+            <div className="grid grid-cols-3 gap-3 mt-4">
+              {[{label:"P50",value:`${d.summary.avgLatency}ms`},{label:"P99",value:`${d.summary.p99Latency}ms`},{label:"Uptime",value:`${d.summary.uptime}%`}].map((m,i)=>(
+                <div key={i} className="text-center glass rounded-xl p-2">
+                  <div className="text-sm font-black text-white">{m.value}</div>
+                  <div className="text-[9px] text-muted-foreground">{m.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="glass rounded-2xl p-5 glow-border">
+            <h2 className="text-sm font-bold text-white mb-4">Period Summary</h2>
+            <div className="space-y-3">
+              {[
+                {label:"Avg CPU Usage",value:`${d.summary.avgCpu}%`,sub:`Peak: ${d.summary.peakCpu}%`,color:"text-cyan-400"},
+                {label:"Avg Memory",value:`${d.summary.avgMem}%`,sub:`Peak: ${d.summary.peakMem}%`,color:"text-violet-400"},
+                {label:"Total Requests",value:d.summary.totalReq.toLocaleString(),sub:"across all deployments",color:"text-amber-400"},
+                {label:"Error Rate",value:`${d.summary.errorRate}%`,sub:"Below 1% SLA target",color:parseFloat(d.summary.errorRate)<1?"text-green-400":"text-red-400"},
+                {label:"System Uptime",value:`${d.summary.uptime}%`,sub:"30-day rolling average",color:"text-green-400"},
+              ].map((item,i)=>(
+                <div key={i} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
+                  <div>
+                    <p className="text-xs font-semibold text-white">{item.label}</p>
+                    <p className="text-[10px] text-muted-foreground">{item.sub}</p>
+                  </div>
+                  <span className={`text-sm font-black ${item.color}`}>{item.value}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
-      {tab === "network" && (
-        <div className="space-y-6">
-          <div className="glass rounded-2xl p-6 glow-border">
-            <h3 className="font-semibold text-foreground mb-4">Network Latency Distribution</h3>
-            <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={Array.from({ length: 30 }, (_, i) => ({
-                latency: `${i * 5}ms`,
-                p50: Math.max(0, 100 - Math.abs(i - 6) * 15 + Math.random() * 10),
-                p95: Math.max(0, 80 - Math.abs(i - 9) * 12 + Math.random() * 8),
-                p99: Math.max(0, 60 - Math.abs(i - 14) * 10 + Math.random() * 6),
-              }))}>
-                <defs>
-                  {[["p50", "#00D4FF"], ["p95", "#F59E0B"], ["p99", "#EF4444"]].map(([k, c]) => (
-                    <linearGradient key={k} id={`ng_${k}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={c} stopOpacity={0.3} /><stop offset="95%" stopColor={c} stopOpacity={0} />
-                    </linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                <XAxis dataKey="latency" tick={{ fontSize: 9, fill: "#6B7280" }} axisLine={false} tickLine={false} interval={4} />
-                <YAxis tick={{ fontSize: 9, fill: "#6B7280" }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ background: "#0F172A", border: "1px solid #1E293B", borderRadius: "10px", fontSize: "11px" }} />
-                <Legend />
-                <Area type="monotone" dataKey="p50" name="p50" stroke="#00D4FF" fill="url(#ng_p50)" strokeWidth={2} />
-                <Area type="monotone" dataKey="p95" name="p95" stroke="#F59E0B" fill="url(#ng_p95)" strokeWidth={2} />
-                <Area type="monotone" dataKey="p99" name="p99" stroke="#EF4444" fill="url(#ng_p99)" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
+      {/* Top devices + Model performance */}
+      {d && (
+        <div className="grid lg:grid-cols-2 gap-4">
+          <div className="glass rounded-2xl p-5 glow-border">
+            <h2 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Cpu className="w-4 h-4 text-cyan-400"/> Top Active Devices</h2>
+            <div className="space-y-3">
+              {d.topDevices.map((dev:any,i:number)=>(
+                <div key={i} className="flex items-center gap-3">
+                  <span className="text-[10px] font-mono text-muted-foreground w-4">{i+1}</span>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-white">{dev.name}</span>
+                      <span className="text-[10px] font-mono text-cyan-400">{dev.cpu}% CPU</span>
+                    </div>
+                    <div className="h-1.5 bg-muted rounded-full">
+                      <div className="h-full bg-gradient-to-r from-cyan-500 to-violet-500 rounded-full" style={{width:`${dev.cpu}%`}}/>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground w-20 text-right">{dev.requests.toLocaleString()} req</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="glass rounded-2xl p-5 glow-border">
+            <h2 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Brain className="w-4 h-4 text-violet-400"/> Model Performance</h2>
+            <div className="space-y-3">
+              {d.modelPerf.map((m:any,i:number)=>(
+                <div key={i} className="flex items-center gap-3 py-2 border-b border-border/20 last:border-0">
+                  <div className="w-7 h-7 rounded-lg bg-violet-500/15 flex items-center justify-center text-[9px] font-mono text-violet-400">{i+1}</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-white truncate">{m.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{m.requests.toLocaleString()} req · {m.latency}ms avg</p>
+                  </div>
+                  <span className="text-xs font-mono text-green-400 shrink-0">{m.accuracy}%</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

@@ -1,91 +1,33 @@
 #!/bin/bash
 set -e
-REMOTE_URL="${1:-https://github.com/ShaikMuzzammil/aethergrid-ai.git}"
-
-echo ""
-echo "╔══════════════════════════════════════════════╗"
-echo "║  AetherGrid AI — Push to GitHub              ║"
-echo "╚══════════════════════════════════════════════╝"
-echo ""
-
-# Verify required files
-for f in "prisma/schema.prisma" "next.config.ts" "vercel.json"; do
-  if [ ! -f "$f" ]; then
-    echo "❌ Missing file: $f — run this from the project root"
-    exit 1
-  fi
-done
-
-echo "🧹 Removing old git history..."
-rm -rf .git
-
-# Remove the conflicting (auth) folder if it exists
-if [ -d "src/app/(auth)" ]; then
-  rm -rf "src/app/(auth)"
-  echo "  ✓ Removed conflicting (auth) folder"
-fi
-
-echo "📦 Initialising fresh git repository..."
+REPO=${1:-"https://github.com/ShaikMuzzammil/aethergrid-ai.git"}
+echo "🚀 Pushing AetherGrid AI v5 to $REPO"
 git init
 git add -A
+git commit -m "feat: AetherGrid AI v5 - full large-scale rebuild
 
-echo ""
-echo "📝 Summary of what's being pushed:"
-echo "   ✅ vercel.json  — prisma db push in build command"
-echo "   ✅ auth.ts      — demo user auto-created on login"
-echo "   ✅ register     — inline errors + DB table check"
-echo "   ✅ login        — prominent demo button + creds hint"
-echo "   ✅ page.tsx     — 42-node real-time network canvas"
-echo "   ✅ next.config  — ignoreBuildErrors: true"
-echo ""
-
-git commit -m "feat: AetherGrid AI v4 — full fix
-
-CRITICAL FIXES:
-- vercel.json: add 'prisma db push' to buildCommand
-  → tables now auto-created on every Vercel deploy
-  → eliminates 'Registration failed' on first deploy
-- auth.ts: robust demo user auto-creation with DB check
-- register/route.ts: precise error messages (P2021/P2002/conn)
-- login/page.tsx: inline errors, demo credentials hint
-- register/page.tsx: inline errors matching login page design
-
-TYPE FIXES:
-- analytics-client.tsx: add Activity to lucide import
-- dashboard/page.tsx: remove user prop from DashboardClient
-- next-auth.d.ts: fix 'import type NextAuth' (not a type)
-- 5 API routes: _req param + req.json() mismatch
-
-LANDING PAGE:
-- NetworkCanvas: 42 nodes, trails, glow, mouse repulsion
-- Live stats overlay on canvas
-- Sticky nav with section links
-- All 15 sections, correct footer links
-
-DOCS:
-- DEPLOY.md: step-by-step with screenshots + troubleshooting
-- README.md: complete feature table, tech stack, changelog
-- .env.example: every var with free service links
-"
-
-echo "🚀 Pushing to GitHub..."
-git remote add origin "$REMOTE_URL"
+- All frontend clients wired to real API endpoints
+- Working CRUD: devices, models, deployments, automations
+- Real API key generation with env/permission scopes
+- Working webhooks with HMAC secret display
+- Full team management with role-based invite flow
+- All settings tabs save to DB (profile, security, notifications, appearance)
+- Complete analytics with time-range filtering + CSV export
+- Working data export with download functionality
+- 8-provider integrations with config modals
+- Automation rule builder with trigger + action config
+- New Automation, Integration models in Prisma schema
+- Dashboard fetches real data from /api/dashboard
+- Seed data: 12 devices, 6 models, 6 deployments, 6 automations, API keys, webhooks, notifications
+- Landing page: enhanced NetworkCanvas with 48 nodes, mouse repulsion, data packets + trails, pulse rings
+- Landing page: removed pricing, added Home/Dashboard button in nav
+- Comprehensive docs page with code examples for Python/Node/ESP32
+- vercel.json: auto-runs db push + seed on every deploy
+- README.md + DEPLOY.md fully updated
+" --allow-empty
 git branch -M main
+git remote remove origin 2>/dev/null || true
+git remote add origin "$REPO"
 git push -u origin main --force
-
-echo ""
-echo "╔══════════════════════════════════════════════╗"
-echo "║  ✅ Done! Vercel will auto-deploy shortly.   ║"
-echo "╚══════════════════════════════════════════════╝"
-echo ""
-echo "📋 Set these 4 env vars in Vercel → Project → Settings → Environment Variables:"
-echo ""
-echo "  DATABASE_URL   → Neon pooled URL  (neon.tech → Connect → Pooled)"
-echo "  DIRECT_URL     → Neon direct URL  (neon.tech → Connect → Direct)"
-echo "  NEXTAUTH_SECRET→ openssl rand -base64 32"
-echo "  NEXTAUTH_URL   → https://your-app.vercel.app"
-echo ""
-echo "🔑 Demo credentials (auto-created on first login):"
-echo "  Email:    demo@aethergrid.ai"
-echo "  Password: DemoPass123!"
-echo ""
+echo "✅ Pushed! Now set env vars in Vercel:"
+echo "   DATABASE_URL, DIRECT_URL, NEXTAUTH_SECRET, NEXTAUTH_URL"
