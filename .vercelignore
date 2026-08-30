@@ -1,6 +1,5 @@
-# Prevent (auth) route group from ever being deployed
-# This is a safety net in addition to the build script cleanup
-src/app/(auth)
 node_modules
 .next
 *.log
+.env.local
+.env
