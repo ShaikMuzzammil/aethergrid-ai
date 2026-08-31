@@ -1,162 +1,203 @@
-# AetherGrid AI — v5
+# AetherGrid AI — v6
 
-> **World-scale autonomous edge AI and hardware OS ecosystem platform**  
-> Manage IoT devices, deploy AI models, automate your fleet, and monitor everything — in one platform.
-
-[![Next.js](https://img.shields.io/badge/Next.js-15-black)](https://nextjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org/)
-[![Prisma](https://img.shields.io/badge/Prisma-ORM-teal)](https://www.prisma.io/)
-[![Neon](https://img.shields.io/badge/Neon-PostgreSQL-green)](https://neon.tech/)
-[![Vercel](https://img.shields.io/badge/Deploy-Vercel-black)](https://vercel.com/)
+> **World-scale autonomous edge AI infrastructure platform**  
+> Deploy AI models to IoT devices, simulate telemetry, automate responses, monitor everything.
 
 ---
 
-## What's Inside
+## ✅ What's fixed in v6
 
-| Module | Features |
-|---|---|
-| **Dashboard** | Real-time fleet overview, system gauges, telemetry charts, live events feed |
-| **Devices** | Register/manage 12+ device types, remote commands, telemetry, alerts |
-| **AI Models** | Upload models (TF/PyTorch/ONNX/TFLite), training status, one-click deploy |
-| **Deployments** | Multi-region deployments, replica scaling, live CPU/memory/req metrics |
-| **Analytics** | Time-ranged charts (1H→30D), latency P50/P99, top devices, model performance |
-| **Automations** | Visual rule builder: threshold/schedule/offline triggers → notify/scale/OTA actions |
-| **Export** | Queue CSV/JSON/XLSX exports, background processing, download completed files |
-| **Integrations** | Slack, GitHub, PagerDuty, Datadog, MQTT, AWS IoT, Grafana, Jira |
-| **API Keys** | Scoped key generation (live/test), permission matrix, revocation |
-| **Webhooks** | HMAC-SHA256 signed events, 10 event types, delivery log |
-| **Team** | OWNER/ADMIN/MEMBER/VIEWER RBAC, invite flow, role management |
-| **Settings** | Profile, password change, notification prefs, appearance, danger zone |
-| **Docs** | In-app API reference with copy-able code examples (curl, Python, Node, ESP32) |
+| # | Area | Fix |
+|---|------|-----|
+| 1 | **Login speed** | Demo user cached in memory after first creation; no repeated bcrypt calls |
+| 2 | **Sign out wrong domain** | Auth callback always uses relative URL; `redirect()` callback enforces same-origin |
+| 3 | **Notifications invisible** | Fixed `markAllRead` body key mismatch (`action:` → `markAllRead:true`); both formats handled |
+| 4 | **Settings not saving** | All 5 tabs (Profile, Security, Notifications, Appearance, Advanced) now call correct API and show success/error toast |
+| 5 | **Password change** | Current password verified, bcrypt compare, min-8 chars, new ≠ current — all enforced |
+| 6 | **Landing page** | Full rewrite: scroll-reveal animations, `IntersectionObserver` counter animation, typewriter hero, particle network with mouse repulsion |
+| 7 | **Tab switching slow** | Removed redundant session re-checks; pages use `force-dynamic` + lightweight `Promise.all` fetches |
+| 8 | **Notification bell** | Badge shows live unread count; auto-refreshes every 30s; correct colour per type |
+| 9 | **Signout destination** | Always lands on `/` (home page), never external domain |
 
 ---
 
-## Tech Stack
+## 🆕 New in v6
 
-- **Framework**: Next.js 15 App Router (TypeScript)
-- **Auth**: NextAuth.js v4 (credentials + JWT)
-- **ORM**: Prisma with PostgreSQL (Neon serverless)
-- **Styling**: Tailwind CSS + custom CSS variables
-- **UI**: Lucide React icons, Sonner toasts
-- **Deploy**: Vercel (auto-deploy on push)
+### 📡 Device Simulator (`/simulator`)
+Simulate real-time IoT telemetry for any registered device directly from the dashboard:
+- **4 modes**: Normal · CPU Spike · Degraded · Chaos
+- Live canvas charts update per push
+- Configurable push interval (1–30 s)
+- Pushes to the same `/api/simulator` endpoint that real devices use — triggers automations, updates analytics
+
+### ⌘K Command Palette
+- Keyboard shortcut **Ctrl+K** (or **⌘K** on Mac) opens a full command palette
+- Navigate to any page, settings, or run quick actions
+- Arrow key navigation + Enter to open
+- Also accessible from the sidebar search bar
+
+### 🔍 Global Search API (`/api/search`)
+- Searches devices, AI models, and deployments by name in one query
+- Used by the Command Palette for live results
+
+### 🔔 Enhanced Notification Panel
+- Colour-coded by type: Device Alert 🟡 · Model Complete 🟣 · Deployment 🔵 · Security 🟢
+- Unread dot + badge count
+- Mark all read button working correctly
+- Auto-refresh every 30s
+
+### 📊 Enhanced Dashboard
+- Active Alerts panel (severity-coded)
+- Top Deployed Models with accuracy
+- Recent Events feed
+- System Health gauges with danger colour at >85%
+- Fully live — auto-refreshes every 30s with animated sparklines
 
 ---
 
-## Quick Start
+## 🚀 Deploy in 3 steps
 
-### 1. Clone and install
+### 1. Push to GitHub
 
 ```bash
-git clone https://github.com/ShaikMuzzammil/aethergrid-ai.git
-cd aethergrid-ai
-npm install
+bash push.sh https://github.com/<your-username>/aethergrid-ai.git
 ```
 
-### 2. Set up environment variables
+### 2. Create Vercel project
+- Import the GitHub repo at **vercel.com/new**
+- Framework: **Next.js** (auto-detected)
 
-Create `.env.local`:
+### 3. Add environment variables
 
-```env
-# Neon PostgreSQL — get from neon.tech (free tier)
-DATABASE_URL="postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require&pgbouncer=true&connection_limit=1"
-DIRECT_URL="postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require"
+| Variable | Value |
+|----------|-------|
+| `DATABASE_URL` | `postgresql://...?sslmode=require&pgbouncer=true` (Neon **pooled** URL) |
+| `DIRECT_URL` | `postgresql://...?sslmode=require` (Neon **direct** URL) |
+| `NEXTAUTH_SECRET` | Run `openssl rand -base64 32` |
+| `NEXTAUTH_URL` | `https://your-app.vercel.app` |
 
-# NextAuth — generate with: openssl rand -base64 32
-NEXTAUTH_SECRET="your-super-secret-key-at-least-32-chars"
-NEXTAUTH_URL="http://localhost:3000"
+Click **Deploy**. The build command runs:
 ```
-
-### 3. Initialize database and seed
-
-```bash
-npm run db:push     # Push Prisma schema to Neon
-npm run db:seed     # Seed demo data (devices, models, etc.)
-npm run dev         # Start development server
+rm -rf src/app/(auth) && prisma generate && prisma db push && prisma db seed && next build
 ```
-
-### 4. Login
-
-Open [http://localhost:3000](http://localhost:3000)  
-Demo credentials: **demo@aethergrid.ai** / **DemoPass123!**
 
 ---
 
-## API Reference (quick)
+## 🔑 Demo login
 
-```bash
-BASE_URL=https://your-project.vercel.app
-API_KEY=ag_live_xxx
-
-# List devices
-curl $BASE_URL/api/devices -H "Authorization: Bearer $API_KEY"
-
-# Register device
-curl -X POST $BASE_URL/api/devices \
-  -H "Authorization: Bearer $API_KEY" \
-  -d '{"name":"ESP32-01","type":"ESP32","location":"Warehouse A"}'
-
-# Send command
-curl -X POST $BASE_URL/api/devices/{id}/commands \
-  -H "Authorization: Bearer $API_KEY" \
-  -d '{"command":"reboot"}'
 ```
-
-Full interactive docs available at `/docs` in the app.
+Email:    demo@aethergrid.ai
+Password: DemoPass123!
+```
 
 ---
 
-## Deploy to Vercel
-
-See [DEPLOY.md](./DEPLOY.md) for the full step-by-step guide.
-
-**TL;DR:**
-
-```bash
-bash push.sh https://github.com/YourUser/aethergrid-ai.git
-```
-
-Then add 4 env vars in Vercel dashboard.
-
----
-
-## Project Structure
+## 🗂 Architecture
 
 ```
 src/
 ├── app/
-│   ├── api/                    # All API routes
-│   │   ├── dashboard/          # Aggregated dashboard stats
-│   │   ├── devices/            # Device CRUD + commands
-│   │   ├── ai-models/          # Model lifecycle management
-│   │   ├── deployments/        # Deployment management
-│   │   ├── analytics/          # Telemetry queries
-│   │   ├── automations/        # Automation rules CRUD
-│   │   ├── integrations/       # 8-provider integration manager
-│   │   ├── export/             # Background export jobs
-│   │   ├── api-keys/           # Scoped key generation
-│   │   ├── webhooks/           # Webhook management
-│   │   ├── team/               # Team RBAC
-│   │   └── users/profile/      # Profile + password update
-│   ├── dashboard/              # Dashboard page
-│   ├── devices/                # Device fleet page
-│   ├── ai-models/              # AI Model Hub page
-│   ├── deployments/            # Deployments page
-│   ├── analytics/              # Analytics page
-│   ├── automations/            # Automation rule builder
-│   ├── integrations/           # Integration marketplace
-│   ├── export/                 # Data export page
-│   ├── settings/               # Settings (profile/security/team/keys/webhooks)
-│   └── docs/                   # In-app API documentation
-├── lib/
-│   ├── auth.ts                 # NextAuth config + demo user
-│   └── db.ts                   # Prisma client singleton
-└── types/
-    └── next-auth.d.ts
-prisma/
-├── schema.prisma               # Full schema (18 models, 12 enums)
-└── seed.ts                     # Rich seed data (12 devices, 6 models, etc.)
+│   ├── page.tsx                  # Landing page (NetworkCanvas, scroll-reveal, typewriter)
+│   ├── login/                    # Optimized login with step labels + Suspense
+│   ├── register/                 # Registration
+│   ├── dashboard/                # Main dashboard (live gauges, alerts, sparklines)
+│   ├── devices/                  # Full CRUD, remote commands, CPU/memory bars
+│   ├── ai-models/                # Upload, version, training progress, status transitions
+│   ├── deployments/              # Create, start/stop, live metrics per deployment
+│   ├── analytics/                # Canvas charts, CSV export, latency P50/P99
+│   ├── automations/              # Visual rule builder (trigger + action)
+│   ├── simulator/                # 🆕 Real-time IoT device telemetry simulator
+│   ├── export/                   # Job queue, polling, real CSV download
+│   ├── integrations/             # 8 providers (Slack, PagerDuty, Datadog…)
+│   ├── docs/                     # In-app API reference (curl/Python/Node/ESP32)
+│   └── settings/
+│       ├── page.tsx              # Profile · Security · Notifications · Appearance · Advanced
+│       ├── api-keys/             # Key generation, permission matrix
+│       ├── team/                 # RBAC invite flow
+│       └── webhooks/             # HMAC secret, event subscriptions
+│
+├── api/
+│   ├── dashboard/                # Devices + models + alerts + chart data
+│   ├── devices/[id]/             # GET/PATCH/DELETE + commands (ping/reboot/OTA)
+│   ├── ai-models/                # Upload, status transitions
+│   ├── deployments/              # Create, start/stop, metrics
+│   ├── analytics/                # Time-range telemetry aggregation
+│   ├── automations/              # CRUD + toggle active
+│   ├── export/                   # Queue jobs + download
+│   ├── integrations/             # 8 provider config
+│   ├── api-keys/                 # crypto key generation
+│   ├── webhooks/                 # HMAC + test ping
+│   ├── team/                     # Invite + RBAC
+│   ├── notifications/            # List + markAllRead (fixed)
+│   ├── search/                   # 🆕 Global full-text search
+│   ├── simulator/                # 🆕 Push simulated telemetry
+│   └── users/profile/            # GET + PATCH (profile, password, prefs)
+│
+├── components/
+│   └── dashboard-layout.tsx      # Sidebar + ⌘K palette + notification panel
+│
+└── lib/
+    ├── auth.ts                   # NextAuth (cached demo user, same-origin redirect)
+    └── db.ts                     # Prisma client singleton
 ```
 
 ---
 
-Built by **Nova** (Shaik Muzzammil) · [Portfolio](https://shaik-muzzammil-portfolio.vercel.app) · [Linktree](https://linktr.ee/Shaik_Muzzammil)
+## 🧩 Prisma Schema highlights
+
+```prisma
+model User {
+  theme     String?  @default("dark")
+  density   String?  @default("default")   // NEW in v6
+  language  String?  @default("en")
+  timezone  String?  @default("UTC")
+  notifyEmail Boolean @default(true)
+  notifyPush  Boolean @default(true)
+  notifySlack Boolean @default(false)
+}
+```
+
+Run migrations after deploy:
+```bash
+npx prisma db push
+npx prisma db seed
+```
+
+---
+
+## 🔌 API Reference (quick)
+
+```bash
+# Auth header for all requests
+-H "x-api-key: ag_live_yourkey"
+
+# List devices
+GET /api/devices
+
+# Push simulated telemetry
+POST /api/simulator
+{ "deviceId": "...", "readings": [{ "metric": "cpu", "value": 73, "unit": "%" }] }
+
+# Mark all notifications read
+PATCH /api/notifications
+{ "markAllRead": true }
+
+# Global search
+GET /api/search?q=jetson
+
+# Update profile
+PATCH /api/users/profile
+{ "name": "...", "bio": "...", "timezone": "Asia/Kolkata" }
+
+# Change password
+PATCH /api/users/profile
+{ "currentPassword": "...", "newPassword": "..." }
+```
+
+Full reference with curl/Python/Node/ESP32 examples is available at `/docs` inside the app.
+
+---
+
+## 📄 License
+
+MIT — free to use, modify, and deploy.

@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
   eslint: { ignoreDuringBuilds: true },
   images: { remotePatterns: [{ protocol: "https", hostname: "**" }] },
   serverExternalPackages: ["bcryptjs"],
+  experimental: {
+    optimizePackageImports: ["lucide-react"],
+  },
 };
 
 export default nextConfig;
